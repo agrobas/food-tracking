@@ -4,7 +4,7 @@
   var C = window.FT_CORE;
   var BUILTIN = window.FT_FOODS;
   var KEY = 'ft-data-v1';
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   var MEALS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['snack', 'Afternoon snack'], ['dinner', 'Dinner'], ['extra', 'Extra']];
   var MEAL_NAME = {}; MEALS.forEach(function (m) { MEAL_NAME[m[0]] = m[1]; });
@@ -543,7 +543,7 @@
     var title = form.isNew ? 'New ' + F.type + ' food' : 'Edit food';
     var h = '<div class="screen">' + header(title, '#/foods' + qs({ tab: F.type })) +
       '<label class="btn outline" style="position:relative">' + svg(I.scan, 20, 1.7) + (form.scanning ? 'Reading label…' : 'Scan nutrition label') + '<input type="file" accept="image/*" data-in="labelone" style="position:absolute;inset:0;opacity:0;cursor:pointer"' + (form.scanning ? ' disabled' : '') + '></label>' +
-      '<div class="muted small" style="text-align:center;margin-top:-6px">Reads the values per 100 g for you to check</div>' +
+      '<div class="muted small" style="text-align:center;margin-top:-6px">Reads the values per 100 g for you to check · <button class="linkbtn light" style="min-height:0;padding:0;display:inline;text-decoration:underline" data-act="form-paste-label">or paste the label text</button></div>' +
       (form.builtin ? '<div class="muted small" style="margin-top:-6px">Standard food. Your changes replace the reference values on this device.</div>' : '') +
       '<section class="row" style="gap:14px">' +
       '<span class="photo-edit' + (F.photo ? ' has' : '') + '">' + (F.photo ? '<img alt="Food photo" src="' + F.photo + '">' : svg(I.camera, 30, 1.5) + '<span style="font-size:13px">Photo</span>') + '</span>' +
@@ -552,7 +552,7 @@
       (F.photo ? '<button class="btn ghost" data-act="photo-remove">Remove photo</button>' : '') +
       '<div class="muted small">Placed on a white background. For a clean cut-out, use “Remove Background” in Photos first.</div></div></section>' +
       '<div class="field"><label for="fname">Name</label><input id="fname" class="input" data-f="name" value="' + esc(F.name) + '" placeholder="e.g. My yogurt" autocomplete="off"></div>' +
-      '<div class="field"><div class="lbl">Values per</div><div class="seg"><button class="' + (!isUnit ? 'on' : '') + '" data-act="basis" data-v="100g">100 g</button><button class="' + (isUnit ? 'on' : '') + '" data-act="basis" data-v="unit">1 unit</button></div></div>';
+      '<div class="field"><div class="lbl">Values per</div><div class="seg"><button class="' + (!isUnit && !F.liquid ? 'on' : '') + '" data-act="basis" data-v="100g">100 g</button><button class="' + (!isUnit && F.liquid ? 'on' : '') + '" data-act="basis" data-v="100ml">100 ml</button><button class="' + (isUnit ? 'on' : '') + '" data-act="basis" data-v="unit">1 unit</button></div></div>';
     if (isUnit) h += '<section class="card clip"><div class="numrow"><label for="un">Unit name</label><input id="un" data-f="unitName" value="' + esc(F.unitName || '') + '" placeholder="unit" style="width:140px"></div><div class="numrow"><label for="ug">Unit weight (optional)</label><input id="ug" data-f="unitG" inputmode="decimal" value="' + (F.unitG == null ? '' : F.unitG) + '" placeholder="–"><span class="u">g</span></div></section>';
     function nr(id, label, key, u) { return '<div class="numrow"><label for="' + id + '">' + label + '</label><input id="' + id + '" data-f="' + key + '" inputmode="decimal" value="' + (F[key] == null ? '' : F[key]) + '" placeholder="0"><span class="u">' + u + '</span></div>'; }
     h += '<section class="card clip">' + nr('fk', 'Calories', 'kcal', 'kcal') + nr('fp', 'Protein', 'p', 'g') + nr('fc', 'Carbs', 'c', 'g') + nr('ff', 'Fat', 'f', 'g') + '</section>';
@@ -567,7 +567,38 @@
     h += '</div><div class="bottombar"><div><button class="btn" data-act="save-food">Save food</button></div></div>';
     return h;
   };
-  actions.basis = function (el) { form.f.basis = el.dataset.v; rerender(); };
+  actions.basis = function (el) {
+    var v = el.dataset.v;
+    form.f.basis = v === 'unit' ? 'unit' : '100g'; form.f.liquid = v === '100ml'; rerender();
+  };
+  function fillFormFromLabel(v) {
+    form.f.basis = '100g'; form.f.liquid = !!v.liquid;
+    ['kcal', 'p', 'c', 'f'].forEach(function (key) { if (v[key] != null) form.f[key] = v[key]; });
+    if (v.perServing && v.serving) {
+      form.f.portions = form.f.portions || [];
+      if (!form.f.portions.some(function (p) { return p.label === 'serving'; })) form.f.portions.push({ type: 'portion', g: v.serving.g, label: 'serving' });
+    }
+    rerender();
+    toast(v.found >= 4 ? (v.perServing ? 'Converted from per serving (' + v.serving.g + ' ' + v.serving.unit + '): check the values' : 'Values read from the label: check them') : 'Some values found: check and complete');
+  }
+  actions['form-paste-label'] = function () {
+    readClipboard(function (t) {
+      var v = C.parseLabel(t);
+      if (!v.found) { toast('No nutrition values found in the copied text'); return; }
+      fillFormFromLabel(v);
+    });
+  };
+  function readClipboard(cb) {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(function (t) { if (t && t.trim()) cb(t); else pasteBox(cb); }).catch(function () { pasteBox(cb); });
+    } else pasteBox(cb);
+  }
+  function pasteBox(cb) {
+    modal('<h2>Paste the text</h2><textarea class="input" data-in-modal rows="6" placeholder="Paste here"></textarea><button class="btn" data-ok>Use this text</button><button class="btn ghost" data-close-btn>Cancel</button>', function (el) {
+      var ta = el.querySelector('[data-in-modal]'); setTimeout(function () { ta.focus(); }, 50);
+      el.querySelector('[data-ok]').onclick = function () { var v = ta.value; closeModal(); if (v.trim()) cb(v); };
+    });
+  }
   actions['portion-add'] = function () {
     var n = document.querySelector('[data-pn]').value.trim(), g = num(document.querySelector('[data-pg]').value);
     if (!n || !(g > 0)) { toast('Write a portion name and its grams'); return; }
@@ -582,7 +613,7 @@
     if (!F.name) { toast('Add a name'); return; }
     if (F.kcal == null || isNaN(F.kcal)) { toast('Add the calories'); return; }
     ['p', 'c', 'f'].forEach(function (key) { if (F[key] == null || isNaN(F[key])) F[key] = 0; });
-    if (F.basis === 'unit') { F.portions = []; if (!F.unitName) F.unitName = 'unit'; } else { delete F.unitName; F.unitG = null; }
+    if (F.basis === 'unit') { F.portions = []; F.liquid = false; if (!F.unitName) F.unitName = 'unit'; } else { delete F.unitName; F.unitG = null; }
     if (!form.id) form.id = (F.type === 'custom' ? 'cus-' : 'usr-') + uid();
     F.id = form.id; F.builtin = false;
     data.foods[F.id] = F;
@@ -757,21 +788,49 @@
     if (!memo.scan) memo.scan = { drafts: [], busy: false, msg: '' };
     var S = memo.scan;
     var h = '<div class="screen">' + header('Scan labels', '#/foods?tab=custom') +
-      '<div class="muted" style="font-size:15px;line-height:1.4;margin-top:-6px">Choose one or more photos of nutrition labels (the table with values per 100 g). The app reads them on your iPhone; then add a name to each and check the numbers.</div>' +
-      '<label class="btn outline" style="position:relative">' + svg(I.camera, 20, 1.6) + (S.busy ? esc(S.msg || 'Reading…') : (S.drafts.length ? 'Add more photos' : 'Choose label photos')) +
-      '<input type="file" accept="image/*" multiple data-in="labels" style="position:absolute;inset:0;opacity:0;cursor:pointer"' + (S.busy ? ' disabled' : '') + '></label>';
+      '<div class="muted" style="font-size:15px;line-height:1.4;margin-top:-6px">Add the nutrition tables of your products, one or many at a time. Then give each a name, check the numbers and save them one by one or all together.</div>' +
+      '<section class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">' +
+      '<div><div style="font-size:16px;font-weight:700">Most accurate: iPhone text recognition</div><div class="muted small" style="line-height:1.4">Run the “Food labels” shortcut on your photos, then tap Paste labels. <button class="linkbtn light" style="min-height:0;padding:0;display:inline;text-decoration:underline" data-act="shortcut-help">How to set it up</button></div></div>' +
+      '<button class="btn" data-act="paste-labels"' + (S.busy ? ' disabled' : '') + '>Paste labels</button></section>' +
+      '<section class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">' +
+      '<div><div style="font-size:16px;font-weight:700">Quick: read the photos here</div><div class="muted small" style="line-height:1.4">Works offline after the first time. Less accurate: crop the photo to the table and keep it straight.</div></div>' +
+      '<label class="btn outline" style="position:relative">' + svg(I.camera, 20, 1.6) + '<span data-scanmsg>' + (S.busy ? esc(S.msg || 'Reading…') : 'Choose label photos') + '</span>' +
+      '<input type="file" accept="image/*" multiple data-in="labels" style="position:absolute;inset:0;opacity:0;cursor:pointer"' + (S.busy ? ' disabled' : '') + '></label></section>';
+    if (S.drafts.length) h += '<h2 class="sec">To review (' + S.drafts.length + ')</h2>';
     S.drafts.forEach(function (d, i) {
-      function nf(key, label, u) { return '<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted);flex:1;min-width:0">' + label + '<span class="row" style="gap:3px"><input data-draft="' + i + '" data-key="' + key + '" inputmode="decimal" value="' + (d[key] == null ? '' : d[key]) + '" style="width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 6px;font-size:16px;background:#fff' + (d[key] == null ? ';border-color:#B9B3A9;background:#FBF8F3' : '') + '"><span>' + u + '</span></span></label>'; }
+      var u = d.liquid ? 'ml' : 'g';
+      function nf(key, label, un) { return '<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted);flex:1;min-width:0">' + label + '<span class="row" style="gap:3px"><input data-draft="' + i + '" data-key="' + key + '" inputmode="decimal" value="' + (d[key] == null ? '' : d[key]) + '" style="width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 6px;font-size:16px;background:#fff' + (d[key] == null ? ';border-color:#B9B3A9;background:#FBF8F3' : '') + '"><span>' + un + '</span></span></label>'; }
+      var status = d.found >= 4 ? (d.consistent === false ? 'Numbers don’t add up · check them' : 'All values found') : d.found ? 'Some values missing · check the label' : 'Could not read this label · fill in by hand';
+      if (d.perServing && d.serving) status += ' · converted from per serving (' + C.fmtNum(d.serving.g, 1) + ' ' + d.serving.unit + ')';
       h += '<section class="card" style="padding:12px;display:flex;flex-direction:column;gap:10px">' +
-        '<div class="row" style="align-items:flex-start"><img alt="Label photo" src="' + d.thumb + '" style="width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line);flex:none">' +
+        '<div class="row" style="align-items:flex-start">' + (d.thumb ? '<button data-act="draft-photo" data-i="' + i + '" style="border:none;padding:0;background:none;cursor:zoom-in;flex:none" aria-label="See the label photo"><img alt="" src="' + d.thumb + '" style="width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block"></button>' : '') +
         '<div class="grow" style="display:flex;flex-direction:column;gap:6px"><input class="input" style="min-height:44px;font-size:16px" data-draft="' + i + '" data-key="name" value="' + esc(d.name || '') + '" placeholder="Name (required)" aria-label="Food name">' +
-        '<div class="muted small">' + (d.found >= 4 ? (d.consistent === false ? 'Numbers don’t add up · check them' : 'All values found · per 100 g') : d.found ? 'Some values missing · check the label' : 'Could not read this label · fill in by hand') + '</div></div>' +
+        '<div class="muted small">' + esc(status) + '</div></div>' +
         '<button class="xbtn" data-act="draft-remove" data-i="' + i + '" aria-label="Remove">' + svg(I.x, 18) + '</button></div>' +
-        '<div class="row" style="gap:8px">' + nf('kcal', 'Calories', 'kcal') + nf('p', 'Protein', 'g') + nf('c', 'Carbs', 'g') + nf('f', 'Fat', 'g') + '</div></section>';
+        '<div class="seg" style="padding:3px"><button style="min-height:34px;font-size:14px" class="' + (!d.liquid ? 'on' : '') + '" data-act="draft-unit" data-i="' + i + '" data-v="g">Per 100 g</button><button style="min-height:34px;font-size:14px" class="' + (d.liquid ? 'on' : '') + '" data-act="draft-unit" data-i="' + i + '" data-v="ml">Per 100 ml</button></div>' +
+        '<div class="row" style="gap:8px">' + nf('kcal', 'Calories', 'kcal') + nf('p', 'Protein', 'g') + nf('c', 'Carbs', 'g') + nf('f', 'Fat', 'g') + '</div>' +
+        '<button class="btn ghost" data-act="draft-save" data-i="' + i + '">Save this one</button></section>';
     });
     h += '</div>';
-    if (S.drafts.length) h += '<div class="bottombar"><div><button class="btn" data-act="drafts-save"' + (S.busy ? ' disabled' : '') + '>Save ' + S.drafts.length + ' food' + (S.drafts.length > 1 ? 's' : '') + '</button></div></div>';
+    if (S.drafts.length > 1) h += '<div class="bottombar"><div><button class="btn" data-act="drafts-save"' + (S.busy ? ' disabled' : '') + '>Save all ' + S.drafts.length + '</button></div></div>';
     return h;
+  };
+  actions['draft-photo'] = function (el) {
+    var d = memo.scan.drafts[+el.dataset.i];
+    modal('<img alt="Label photo" src="' + d.thumb + '" style="width:100%;border-radius:12px;background:#fff"><button class="btn ghost" data-close-btn>Close</button>');
+  };
+  actions['shortcut-help'] = function () {
+    modal('<h2>“Food labels” shortcut</h2><div style="font-size:15px;line-height:1.45;max-height:60vh;overflow:auto">' +
+      '<p style="margin:0 0 8px">Uses the iPhone’s own text recognition, on the device. Create it once in the <b>Shortcuts</b> app → <b>+</b>, name it <b>Food labels</b>, and add these actions:</p><ol style="margin:0;padding-left:20px">' +
+      '<li><b>Select Photos</b> — turn on <i>Select Multiple</i>.</li>' +
+      '<li><b>Repeat with Each</b> item in <i>Photos</i>.</li>' +
+      '<li>Inside the repeat: <b>Extract Text from Image</b> (Repeat Item).</li>' +
+      '<li>Inside the repeat: <b>Text</b> with <i>Text from Image</i>, a new line and <code>=====</code>.</li>' +
+      '<li>End of the repeat, then <b>Combine Text</b> (Repeat Results, New Lines).</li>' +
+      '<li><b>Copy to Clipboard</b>.</li>' +
+      '<li><b>Show Notification</b>: “Labels copied”.</li></ol>' +
+      '<p style="margin:8px 0 0">Run it, pick your label photos, then come back here and tap <b>Paste labels</b>. Tip: in the shortcut’s settings turn on <i>Show in Share Sheet</i> to run it from Photos with several photos selected.</p></div>' +
+      '<button class="btn ghost" data-close-btn>Close</button>');
   };
   function loadOcr() {
     if (window.FT_OCR) return Promise.resolve();
@@ -779,16 +838,41 @@
   }
   function scanFiles(files) {
     var S = memo.scan; S.busy = true; var list = Array.prototype.slice.call(files), i = 0;
-    function progress(m) { if (/recogniz/.test(m.status)) S.msg = 'Reading label ' + (i + 1) + ' of ' + list.length + '… ' + Math.round((m.progress || 0) * 100) + '%'; else S.msg = 'Preparing the label reader…'; var b = document.querySelector('label.btn.outline'); if (b && b.firstChild) b.childNodes[1].nodeValue = S.msg; }
+    function progress(m) { if (/recogniz/.test(m.status)) S.msg = 'Reading label ' + (i + 1) + ' of ' + list.length + '… ' + Math.round((m.progress || 0) * 100) + '%'; else S.msg = 'Preparing the label reader…'; var b = document.querySelector('[data-scanmsg]'); if (b) b.textContent = S.msg; }
     S.msg = 'Preparing the label reader…'; if (current === '/scan') rerender();
     function next() {
       if (i >= list.length) { S.busy = false; S.msg = ''; if (current === '/scan') rerender(); return; }
       window.FT_OCR.readLabel(list[i], progress).then(function (v) {
-        S.drafts.push({ name: '', kcal: v.kcal, p: v.p, c: v.c, f: v.f, found: v.found, consistent: v.consistent, thumb: v.thumb });
+        S.drafts.push(draftFrom(v));
       }).catch(function (e) { toast(e.message || 'Could not read a photo'); })
         .then(function () { i++; if (current === '/scan') rerender(); next(); });
     }
     loadOcr().then(next).catch(function () { S.busy = false; toast('Could not load the label reader. Check your connection.'); rerender(); });
+  }
+  function draftFrom(v) {
+    return { name: '', kcal: v.kcal, p: v.p, c: v.c, f: v.f, found: v.found, consistent: v.consistent, thumb: v.thumb || null, liquid: !!v.liquid, perServing: !!v.perServing, serving: v.serving || null };
+  }
+  actions['paste-labels'] = function () {
+    readClipboard(function (t) {
+      var parts = C.splitLabels(t), added = 0;
+      parts.forEach(function (part) { var v = C.parseLabel(part); if (v.found) { memo.scan.drafts.push(draftFrom(v)); added++; } });
+      if (!added) toast('No nutrition values found in the copied text');
+      else { toast(added + ' label' + (added > 1 ? 's' : '') + ' added: add the names'); rerender(); }
+    });
+  };
+  actions['draft-unit'] = function (el) { var d = memo.scan.drafts[+el.dataset.i]; d.liquid = el.dataset.v === 'ml'; rerender(); };
+  actions['draft-save'] = function (el) {
+    var i = +el.dataset.i, d = memo.scan.drafts[i];
+    if (!saveDraft(d, i)) return;
+    memo.scan.drafts.splice(i, 1); save(); toast('“' + d.name.trim() + '” saved'); rerender();
+  };
+  function saveDraft(d, i) {
+    if (!(d.name || '').trim()) { toast('Add a name'); var inp = document.querySelector('[data-draft="' + i + '"][data-key="name"]'); if (inp) inp.focus(); return false; }
+    if (d.kcal == null) { toast('Add the calories of “' + d.name + '”'); return false; }
+    var id = 'cus-' + uid();
+    data.foods[id] = { id: id, type: 'custom', name: d.name.trim(), basis: '100g', liquid: !!d.liquid, kcal: d.kcal, p: d.p || 0, c: d.c || 0, f: d.f || 0,
+      portions: d.serving && d.perServing ? [{ type: 'portion', g: d.serving.g, label: 'serving' }] : d.liquid ? [{ type: 'portion', g: 250, label: 'glass' }] : [], photo: null, builtin: false };
+    return true;
   }
   actions['draft-remove'] = function (el) { memo.scan.drafts.splice(+el.dataset.i, 1); rerender(); };
   actions['drafts-save'] = function () {
@@ -797,11 +881,8 @@
       if (!(D[i].name || '').trim()) { toast('Add a name to every food'); var inp = document.querySelector('[data-draft="' + i + '"][data-key="name"]'); if (inp) inp.focus(); return; }
       if (D[i].kcal == null) { toast('Add the calories of “' + D[i].name + '”'); return; }
     }
-    D.forEach(function (d) {
-      var id = 'cus-' + uid();
-      data.foods[id] = { id: id, type: 'custom', name: d.name.trim(), basis: '100g', kcal: d.kcal, p: d.p || 0, c: d.c || 0, f: d.f || 0, portions: [], photo: null, builtin: false };
-    });
-    save(); toast(D.length + ' food' + (D.length > 1 ? 's' : '') + ' saved'); memo.scan = null; go('#/foods?tab=custom');
+    D.forEach(function (d, i) { saveDraft(d, i); });
+    var n = D.length; save(); toast(n + ' food' + (n > 1 ? 's' : '') + ' saved'); memo.scan = null; go('#/foods?tab=custom');
   };
 
   // SETTINGS
@@ -871,8 +952,7 @@
       loadOcr().then(function () { return window.FT_OCR.readLabel(file); }).then(function (v) {
         form.scanning = false;
         if (!v.found) { toast('Could not read the label. Try a sharper, straight photo.'); rerender(); return; }
-        form.f.basis = '100g'; ['kcal', 'p', 'c', 'f'].forEach(function (key) { if (v[key] != null) form.f[key] = v[key]; });
-        rerender(); toast(v.found >= 4 ? 'Values read from the label: check them' : 'Some values found: check and complete');
+        fillFormFromLabel(v);
       }).catch(function () { form.scanning = false; rerender(); toast('Could not load the label reader. Check your connection.'); });
     }
     else if (t.dataset.in === 'restore' && t.files && t.files[0]) { restoreFile(t.files[0]); t.value = ''; }
