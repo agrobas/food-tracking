@@ -251,15 +251,12 @@
   // ---------- nutrition labels (OCR text) ----------
   // OCR often reads the unit "g" as a 9 ("3,0 g" -> "3,09"): undo that when no "g" follows
   function labelNum(seg) {
-    seg = String(seg);
-    var withG = seg.match(/<?\s*(\d+(?:[.,]\d+)?)\s*g\b/);
-    if (withG) { var vg = parseFloat(withG[1].replace(',', '.')); if (!isNaN(vg)) return vg; }
-    var m = seg.match(/<?\s*(\d+(?:[.,]\d+)?)/);
+    var m = String(seg).match(/<?\s*(\d+(?:[.,]\d+)?)(\s*g\b|g)?/);
     if (!m) return null;
-    var raw = m[1];
-    if (/[.,]\d{2,}$/.test(raw) && /9$/.test(raw)) raw = raw.slice(0, -1);
+    var raw = m[1], hasG = !!m[2];
+    if (!hasG && /[.,]\d{2,}$/.test(raw) && /9$/.test(raw)) raw = raw.slice(0, -1);
     var v = parseFloat(raw.replace(',', '.'));
-    if (v > 100 && /9$/.test(raw) && !/[.,]/.test(raw)) v = parseFloat(raw.slice(0, -1));
+    if (!hasG && v > 100 && /9$/.test(raw) && !/[.,]/.test(raw)) v = parseFloat(raw.slice(0, -1));
     return isNaN(v) ? null : v;
   }
   function parseLabel(text) {
@@ -279,14 +276,14 @@
     var L = lines.slice(start);
     var body = L.join('\n');
 
-    res.liquid = /(per|por|amount per)\s*100\s*ml|100\s*ml\b/.test(body) && !/(per|por)\s*100\s*g\b/.test(body);
+    res.liquid = /(per|por|amount per)\s*:?\s*100\s*ml|100\s*ml\b/.test(body) && !/(per|por)\s*:?\s*100\s*g\b/.test(body);
     var has100 = /(per|por)\s*100\s*(g|9|gr|ml)|100\s*(g|ml)\s*(serving|size)|amount per 100|\b100\s*(g|ml)\b/.test(body);
     var sv = body.match(/serving size[^\n(]*?\(?\s*(\d+(?:\.\d+)?)\s*(g|ml)\b/) || body.match(/(?:per|por)\s*(?:serving|racion|portion)?\s*\(?(\d+(?:\.\d+)?)\s*(g|ml)\b/);
     if (sv && parseFloat(sv[1]) !== 100) res.serving = { g: parseFloat(sv[1]), unit: sv[2] };
 
     // energy
     var km = body.match(/(\d+(?:\.\d+)?)[^\d\n]{0,12}?k\s*c\s*a\s*l/)
-      || body.match(/k\s*c\s*a\s*l\s*\)?[^\d\n]{0,6}(\d+(?:\.\d+)?)/)
+      || body.match(/k\s*c\s*a\s*l\s*\)?[^\d\n]{0,14}(\d+(?:\.\d+)?)/)
       || body.match(/calori[a-z]*[^\d\n]{0,30}?(\d{2,4})\b/);
     var kj = body.match(/(\d+(?:\.\d+)?)\s*k\s*[j)]/) || body.match(/k\s*j\s*\)?[^\d\n]{0,6}(\d+(?:\.\d+)?)/);
     var fromKj = kj ? parseFloat(kj[1]) / 4.184 : null;
@@ -299,7 +296,7 @@
 
     var RX = {
       f: [/^.*?(total fat|grasas? totales|grasas?|materia grasa|lipidos|\bfat|\bft)\b[^0-9<]*/, /saturad|satur|monoinsat|poliinsat|polyunsat|monounsat|trans\b|% ?fat|fat-free|non-fat|low fat/],
-      c: [/^.*?(total carbohydrates?|hidratos de carbono|carbohidratos|carbohydrates?|glucidos|[a-z]*hydrates?)\b[^0-9<]*/, /azucar|sugar|fib/],
+      c: [/^.*?(total carbohydrates?|hidratos de carbono|carbohidratos|carbohydrates?|glucidos|[a-z]*hydrates?|carbo[a-z]*|hidratos)\b[^0-9<]*/, /azucar|sugar|fib/],
       p: [/^.*?(proteinas?|proteins?|[a-z]?rotein|etein)\b[^0-9<]*/, /% ?protein|source of protein|soy protein \(/]
     };
     var KEYS = /(grasa|lipido|\bfat\b|hidratos|carbohidrat|carbohydrat|glucido|protein|azucar|sugar|saturad|saturat|fibra|fibre|fiber|sal\b|salt|sodio|sodium|energ|calori|cholesterol|calcium|iron)/;
@@ -313,8 +310,16 @@
     var order = up > down ? [-1, 1] : [1, -1];
     function grab(re, not) {
       for (var i = 0; i < L.length; i++) {
-        var l = L[i]; if (!re.test(l) || (not && not.test(l))) continue;
-        var v = labelNum(l.replace(re, ''));
+        var l = L[i], m = l.match(re); if (!m) continue;
+        var kwEnd = m[0].length, rest = l.slice(kwEnd);
+        if (not) {
+          var nm = l.match(not);
+          if (nm) {
+            if (nm.index < kwEnd) continue; // e.g. "of which saturated fat"
+            rest = l.slice(kwEnd, nm.index); // two rows read as one line: stop at the next row's name
+          }
+        }
+        var v = labelNum(rest);
         for (var o = 0; o < 2 && v == null; o++) if (numericOnly(L[i + order[o]])) v = labelNum(L[i + order[o]]);
         if (v != null) return v;
       }
@@ -351,6 +356,8 @@
       res.perServing = true;
       if (res.serving.unit === 'ml') res.liquid = true;
     }
+    var nameM = String(text || '').match(/^\s*[*_#]*\s*(?:name|nombre|product|producto)\s*[*_]*\s*:\s*[*_]*\s*(.+)$/im);
+    if (nameM) res.name = nameM[1].replace(/[*_#]/g, '').trim();
     res.found = ['kcal', 'p', 'c', 'f'].filter(function (key) { return res[key] != null; }).length;
     if (res.found === 4 && res.kcal) { var est = 4 * res.p + 4 * res.c + 9 * res.f; res.consistent = Math.abs(est - res.kcal) <= Math.max(25, res.kcal * 0.25); }
     return res;

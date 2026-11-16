@@ -1,0 +1,1 @@
+PaddleOCR models (Apache-2.0) via @gutenye/ocr-browser (MIT), ONNX Runtime Web (MIT), OpenCV.js (Apache-2.0).

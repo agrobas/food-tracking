@@ -1,31 +1,28 @@
-/* Food tracking — reads nutrition labels on the device with Tesseract (open-source OCR, no AI service).
-   Loaded only when a label is scanned; files are cached for offline use after the first scan. */
+/* Food tracking — reads nutrition labels on the iPhone with PaddleOCR (open-source, runs on the device, no AI service).
+   The reader (~40 MB) downloads the first time it is used and is then cached for offline use. */
 (function () {
   'use strict';
-  var base = new URL('vendor/tesseract/', location.href).href;
-  var workerP = null;
+  var base = new URL('vendor/paddle/', location.href).href;
+  var ocrP = null;
 
   function loadScript(src) {
     return new Promise(function (ok, fail) {
-      if (window.Tesseract) return ok();
-      var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = function () { fail(new Error('Could not load the label reader')); };
+      var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = function () { fail(new Error('Could not load the label reader. Check your connection.')); };
       document.head.appendChild(s);
     });
   }
-  function getWorker(onProgress) {
-    if (workerP) workerP.onProgress = onProgress;
-    if (!workerP) {
-      workerP = loadScript(base + 'tesseract.min.js').then(function () {
-        return window.Tesseract.createWorker(['spa', 'eng'], 1, {
-          workerPath: base + 'worker.min.js',
-          corePath: base + 'core',
-          langPath: base + 'lang',
-          gzip: true,
-          logger: function (m) { if (workerP && workerP.onProgress && m && m.status) workerP.onProgress(m); }
-        }).then(function (w) { return w.setParameters({ tessedit_pageseg_mode: '11' }).then(function () { return w; }); });
-      }).catch(function (e) { workerP = null; throw e; });
+  function getOcr(onProgress) {
+    if (!ocrP) {
+      if (onProgress) onProgress({ status: 'loading' });
+      ocrP = (window.ort ? Promise.resolve() : loadScript(base + 'ort.min.js'))
+        .then(function () { return window.PaddleOcr ? null : loadScript(base + 'paddle-ocr.min.js'); })
+        .then(function () {
+          window.ort.env.wasm.wasmPaths = base;
+          window.ort.env.wasm.numThreads = 1;
+          return window.PaddleOcr.create({ models: { detectionPath: base + 'ch_PP-OCRv4_det_infer.onnx', recognitionPath: base + 'ch_PP-OCRv4_rec_infer.onnx', dictionaryPath: base + 'ppocr_keys_v1.txt' } });
+        }).catch(function (e) { ocrP = null; throw e; });
     }
-    return workerP;
+    return ocrP;
   }
   function loadImage(file) {
     return new Promise(function (ok, fail) {
@@ -35,30 +32,45 @@
       img.src = url;
     });
   }
-  // grayscale + adaptive black & white (Bradley), optionally rotated: copes with coloured packs and shadows
-  function prepare(img, rot) {
-    var long = Math.max(img.width, img.height), sc = long < 1600 ? 1600 / long : Math.min(1, 3200 / long);
+  function canvasFor(img, rot) {
+    var long = Math.max(img.width, img.height), sc = Math.min(1, 2000 / long);
     var w0 = Math.round(img.width * sc), h0 = Math.round(img.height * sc);
     var side = rot % 180 !== 0, w = side ? h0 : w0, h = side ? w0 : h0;
     var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
     var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
     ctx.translate(w / 2, h / 2); ctx.rotate(rot * Math.PI / 180); ctx.drawImage(img, -w0 / 2, -h0 / 2, w0, h0);
-    var d = ctx.getImageData(0, 0, w, h), px = d.data, g = new Float32Array(w * h);
-    for (var i = 0, j = 0; i < px.length; i += 4, j++) g[j] = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
-    var I = new Float64Array((w + 1) * (h + 1));
-    for (var y = 0; y < h; y++) { var row = 0; for (var x = 0; x < w; x++) { row += g[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row; } }
-    var r = Math.max(8, Math.round(w / 48)), t = 0.15;
-    for (var yy = 0; yy < h; yy++) {
-      var y0 = Math.max(0, yy - r), y1 = Math.min(h, yy + r + 1);
-      for (var xx = 0; xx < w; xx++) {
-        var x0 = Math.max(0, xx - r), x1 = Math.min(w, xx + r + 1);
-        var sum = I[y1 * (w + 1) + x1] - I[y0 * (w + 1) + x1] - I[y1 * (w + 1) + x0] + I[y0 * (w + 1) + x0];
-        var v = g[yy * w + xx] * (y1 - y0) * (x1 - x0) <= sum * (1 - t) ? 0 : 255, k = (yy * w + xx) * 4;
-        px[k] = px[k + 1] = px[k + 2] = v;
-      }
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.putImageData(d, 0, 0);
     return cv;
+  }
+  function blobUrl(cv) {
+    return new Promise(function (ok) { cv.toBlob(function (b) { ok(URL.createObjectURL(b)); }, 'image/jpeg', 0.92); });
+  }
+  // put the detected text boxes back into the rows of the table (undoing the tilt of the photo)
+  function rowsFromBoxes(T) {
+    var items = [], slopes = [];
+    (T || []).forEach(function (t) {
+      var b = t.box; if (!b || !t.text) return;
+      var cx = (b[0][0] + b[1][0] + b[2][0] + b[3][0]) / 4, cy = (b[0][1] + b[1][1] + b[2][1] + b[3][1]) / 4;
+      var w = Math.hypot(b[1][0] - b[0][0], b[1][1] - b[0][1]), h = Math.hypot(b[3][0] - b[0][0], b[3][1] - b[0][1]);
+      if (w > h * 2 && b[1][0] !== b[0][0]) slopes.push((b[1][1] - b[0][1]) / (b[1][0] - b[0][0]));
+      items.push({ text: t.text, cx: cx, cy: cy, x: Math.min(b[0][0], b[3][0]), h: h });
+    });
+    if (!items.length) return '';
+    slopes.sort(function (a, c) { return a - c; });
+    var sl = slopes.length ? slopes[Math.floor(slopes.length / 2)] : 0;
+    items.forEach(function (i) { i.y = i.cy - sl * i.cx; i.xx = i.x + sl * i.cy; });
+    var hs = items.map(function (i) { return i.h; }).sort(function (a, c) { return a - c; });
+    var mh = hs[Math.floor(hs.length / 2)] || 20, rows = [];
+    items.sort(function (a, c) { return a.y - c.y; });
+    items.forEach(function (i) {
+      var row = null;
+      for (var k = 0; k < rows.length; k++) if (Math.abs(rows[k].y - i.y) < mh * 0.55) { row = rows[k]; break; }
+      if (!row) { row = { y: i.y, ws: [] }; rows.push(row); }
+      row.ws.push(i); row.y = (row.y * (row.ws.length - 1) + i.y) / row.ws.length;
+    });
+    return rows.sort(function (a, c) { return a.y - c.y; }).map(function (r) {
+      return r.ws.sort(function (a, c) { return a.xx - c.xx; }).map(function (w) { return w.text; }).join(' ');
+    }).join('\n');
   }
   function thumbOf(img) {
     var tc = document.createElement('canvas'), ts = Math.min(1, 1400 / Math.max(img.width, img.height));
@@ -67,49 +79,28 @@
     return tc.toDataURL('image/jpeg', 0.85);
   }
   function score(v) { return v.found * 10 + (v.consistent ? 5 : 0); }
-  // rebuild the visual rows of the table from word positions (label on the left, numbers on the right)
-  function rowsText(blocks) {
-    var words = [], slopes = [];
-    (blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p) { (p.lines || []).forEach(function (l) {
-      var bl = l.baseline; if (bl && bl.x1 - bl.x0 > 80) slopes.push((bl.y1 - bl.y0) / (bl.x1 - bl.x0));
-      (l.words || []).forEach(function (w) { words.push(w); });
-    }); }); });
-    if (!words.length) return '';
-    // undo the tilt of the photo before grouping words into rows
-    slopes.sort(function (a, b) { return a - b; });
-    var slope = slopes.length ? slopes[Math.floor(slopes.length / 2)] : 0;
-    words.forEach(function (w) { var cx = (w.bbox.x0 + w.bbox.x1) / 2; w._cy = (w.bbox.y0 + w.bbox.y1) / 2 - slope * cx; });
-    var hs = words.map(function (w) { return w.bbox.y1 - w.bbox.y0; }).sort(function (a, b) { return a - b; });
-    var mh = hs[Math.floor(hs.length / 2)] || 20, rows = [];
-    words.sort(function (a, b) { return a._cy - b._cy; });
-    words.forEach(function (w) {
-      var cy = w._cy, r = null;
-      for (var i = 0; i < rows.length; i++) if (Math.abs(rows[i].cy - cy) < mh * 0.6) { r = rows[i]; break; }
-      if (!r) { r = { cy: cy, ws: [] }; rows.push(r); }
-      r.ws.push(w); r.cy = (r.cy * (r.ws.length - 1) + cy) / r.ws.length;
-    });
-    return rows.sort(function (a, b) { return a.cy - b.cy; }).map(function (r) {
-      return r.ws.sort(function (a, b) { return a.bbox.x0 - b.bbox.x0; }).map(function (w) { return w.text; }).join(' ');
-    }).join('\n');
-  }
-  // reads the photo; if little is found, tries it turned sideways (labels on round pots are often photographed rotated)
+  // reads one photo; if little is found, tries it turned sideways (labels on round pots are often photographed rotated)
   function readLabel(file, onProgress) {
-    var L, worker;
-    return loadImage(file).then(function (x) { L = x; return getWorker(onProgress); }).then(function (w) {
-      worker = w;
+    var L, ocr;
+    return loadImage(file).then(function (x) { L = x; return getOcr(onProgress); }).then(function (o) {
+      ocr = o;
+      if (onProgress) onProgress({ status: 'reading' });
       var best = null, rots = [0, 90, 270];
       function attempt(i) {
         if (i >= rots.length || (best && best.found === 4 && best.consistent)) return best;
-        return worker.recognize(prepare(L.img, rots[i]), {}, { blocks: true, text: true }).then(function (r) {
-          var text = rowsText(r.data.blocks) || r.data.text || '';
-          var v = window.FT_CORE.parseLabel(text); v.text = text;
-          if (!best || score(v) > score(best)) best = v;
-          if (i === 0 && best.found >= 3) return best;
-          return attempt(i + 1);
+        return blobUrl(canvasFor(L.img, rots[i])).then(function (u) {
+          return ocr.detect(u).then(function (r) {
+            URL.revokeObjectURL(u);
+            var text = rowsFromBoxes(r.texts || r);
+            var v = window.FT_CORE.parseLabel(text); v.text = text;
+            if (!best || score(v) > score(best)) best = v;
+            if (i === 0 && best.found >= 3) return best;
+            return attempt(i + 1);
+          });
         });
       }
       return attempt(0);
     }).then(function (v) { v.thumb = thumbOf(L.img); URL.revokeObjectURL(L.url); return v; });
   }
-  window.FT_OCR = { readLabel: readLabel };
+  window.FT_OCR = { readLabel: readLabel, rowsFromBoxes: rowsFromBoxes };
 })();

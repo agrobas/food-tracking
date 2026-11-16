@@ -4,7 +4,7 @@
   var C = window.FT_CORE;
   var BUILTIN = window.FT_FOODS;
   var KEY = 'ft-data-v1';
-  var VERSION = '1.4.1';
+  var VERSION = '1.5.0';
 
   var MEALS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['snack', 'Afternoon snack'], ['dinner', 'Dinner'], ['extra', 'Extra']];
   var MEAL_NAME = {}; MEALS.forEach(function (m) { MEAL_NAME[m[0]] = m[1]; });
@@ -791,14 +791,12 @@
     var h = '<div class="screen">' + header('Scan labels', '#/foods') +
       '<div class="muted" style="font-size:15px;line-height:1.4;margin-top:-6px">Add the nutrition tables of your products, one or many at a time. Then give each a name, check the numbers and save them one by one or all together.</div>' +
       '<section class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">' +
-      '<div><div style="font-size:16px;font-weight:700">Recommended: iPhone text recognition</div><div class="muted small" style="line-height:1.4">Pick as many label photos as you like; the iPhone reads them and you come back here to paste them all at once. Needs the “Food labels” shortcut (set up once). <button class="linkbtn light" style="min-height:0;padding:0;display:inline;text-decoration:underline" data-act="shortcut-help">How to set it up</button></div></div>' +
-      '<button class="btn" data-act="run-shortcut"' + (S.busy ? ' disabled' : '') + '>' + svg(I.scan, 20, 1.7) + '1 · Choose photos</button>' +
-      '<button class="btn' + (S.awaitPaste ? '' : ' outline') + '" data-act="paste-labels"' + (S.busy ? ' disabled' : '') + '>2 · Paste labels</button>' +
-      (S.awaitPaste ? '<div class="small" style="text-align:center;font-weight:700">Back from the shortcut? Tap “Paste labels”.</div>' : '') + '</section>' +
+      '<div><div style="font-size:16px;font-weight:700">Read the photos</div><div class="muted small" style="line-height:1.4">Pick one or many label photos; the app reads them on your iPhone. The first time it downloads the reader (about 40 MB, better on Wi‑Fi); after that it works offline. Tip: the table should fill most of the photo.</div></div>' +
+      '<label class="btn" style="position:relative">' + svg(I.camera, 20, 1.6) + '<span data-scanmsg>' + (S.busy ? esc(S.msg || 'Reading…') : 'Choose label photos') + '</span>' +
+      '<input type="file" accept="image/*" multiple data-in="labels" style="position:absolute;inset:0;opacity:0;cursor:pointer"' + (S.busy ? ' disabled' : '') + '></label></section>' +
       '<section class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">' +
-      '<div><div style="font-size:16px;font-weight:700">Without the shortcut: read the photos in the app</div><div class="muted small" style="line-height:1.4">Also in bulk and offline, but much less accurate with real packaging: check every number.</div></div>' +
-      '<label class="btn outline" style="position:relative">' + svg(I.camera, 20, 1.6) + '<span data-scanmsg>' + (S.busy ? esc(S.msg || 'Reading…') : 'Choose label photos') + '</span>' +
-      '<input type="file" accept="image/*" multiple data-in="labels" style="position:absolute;inset:0;opacity:0;cursor:pointer"' + (S.busy ? ' disabled' : '') + '></label></section>';
+      '<div><div style="font-size:16px;font-weight:700">Or use ChatGPT</div><div class="muted small" style="line-height:1.4">Copy the prompt, paste it in ChatGPT with your label photos, copy its answer and come back to paste it. Text from the Shortcuts app works too.</div></div>' +
+      '<div class="row" style="gap:8px"><button class="btn ghost" data-act="copy-prompt">Copy ChatGPT prompt</button><button class="btn ghost" data-act="paste-labels"' + (S.busy ? ' disabled' : '') + '>Paste answer</button></div></section>';
     if (S.drafts.length) h += '<h2 class="sec">To review (' + S.drafts.length + ')</h2>';
     S.drafts.forEach(function (d, i) {
       var u = d.liquid ? 'ml' : 'g';
@@ -839,7 +837,7 @@
   }
   function scanFiles(files) {
     var S = memo.scan; S.busy = true; var list = Array.prototype.slice.call(files), i = 0;
-    function progress(m) { if (/recogniz/.test(m.status)) S.msg = 'Reading label ' + (i + 1) + ' of ' + list.length + '… ' + Math.round((m.progress || 0) * 100) + '%'; else S.msg = 'Preparing the label reader…'; var b = document.querySelector('[data-scanmsg]'); if (b) b.textContent = S.msg; }
+    function progress(m) { S.msg = m.status === 'loading' ? 'Downloading the label reader (first time only)…' : 'Reading label ' + (i + 1) + ' of ' + list.length + '…'; var b = document.querySelector('[data-scanmsg]'); if (b) b.textContent = S.msg; }
     S.msg = 'Preparing the label reader…'; if (current === '/scan') rerender();
     function next() {
       if (i >= list.length) { S.busy = false; S.msg = ''; if (current === '/scan') rerender(); return; }
@@ -851,8 +849,14 @@
     loadOcr().then(next).catch(function () { S.busy = false; toast('Could not load the label reader. Check your connection.'); rerender(); });
   }
   function draftFrom(v) {
-    return { name: '', kcal: v.kcal, p: v.p, c: v.c, f: v.f, found: v.found, consistent: v.consistent, thumb: v.thumb || null, liquid: !!v.liquid, perServing: !!v.perServing, serving: v.serving || null };
+    return { name: v.name || '', kcal: v.kcal, p: v.p, c: v.c, f: v.f, found: v.found, consistent: v.consistent, thumb: v.thumb || null, liquid: !!v.liquid, perServing: !!v.perServing, serving: v.serving || null };
   }
+  var GPT_PROMPT = 'Read the nutrition label in each photo I send. For each product reply only with this block, with values per 100 g (or per 100 ml for drinks); if the label only gives values per serving, convert them to per 100 g:\n=====\nName: <product name>\nPer: 100 g or 100 ml\nEnergy: <number> kcal\nFat: <number> g\nCarbohydrate: <number> g\nProtein: <number> g';
+  actions['copy-prompt'] = function () {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(GPT_PROMPT).then(function () { toast('Prompt copied: paste it in ChatGPT with your photos'); }).catch(function () { pasteShow(); });
+    else pasteShow();
+    function pasteShow() { modal('<h2>Copy this prompt</h2><textarea class="input" rows="8" readonly>' + esc(GPT_PROMPT) + '</textarea><button class="btn ghost" data-close-btn>Close</button>'); }
+  };
   actions['run-shortcut'] = function () {
     memo.scan.awaitPaste = true; rerender();
     window.location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent('Food labels');
