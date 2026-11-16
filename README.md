@@ -10,6 +10,8 @@ Personal calorie and macro tracker for iPhone. It is a web app you add to the Ho
   - *Paste labels* (most accurate): the “Food labels” shortcut runs the iPhone's own text recognition on your photos and copies the text; the app reads it (per 100 g / 100 ml, or converts US “per serving” labels).
   - *Choose label photos*: read directly in the app with Tesseract OCR (offline after first use, less accurate).
 - **Favorites**: tap the star next to any food.
+- **My meals** with their own photo.
+- **Export to Excel** (Settings): daily totals and every food logged, for this month, last month, this year or everything.
 - **History**: week, month and year.
 
 Standard values are approximate reference values from public nutrition tables.

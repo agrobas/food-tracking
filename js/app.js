@@ -4,7 +4,7 @@
   var C = window.FT_CORE;
   var BUILTIN = window.FT_FOODS;
   var KEY = 'ft-data-v1';
-  var VERSION = '1.2.1';
+  var VERSION = '1.3.0';
 
   var MEALS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['snack', 'Afternoon snack'], ['dinner', 'Dinner'], ['extra', 'Extra']];
   var MEAL_NAME = {}; MEALS.forEach(function (m) { MEAL_NAME[m[0]] = m[1]; });
@@ -238,7 +238,7 @@
       if (ctx === 'log') {
         h += '<h2 class="sec">My meals</h2>' + (data.meals.length ? '<section class="card clip">' + data.meals.map(function (ml) {
           var t = totals(ml.items);
-          return '<div class="item" style="padding-right:6px"><button class="grow" style="border:none;background:transparent;text-align:left;padding:0;cursor:pointer" data-act="add-mymeal" data-id="' + ml.id + '"><span class="nm">' + esc(ml.name) + '</span><span class="sb">' + esc(ml.items.map(function (i) { return i.name; }).join(', ')) + ' · ' + k(t.kcal) + ' kcal</span></button><button class="plus" data-act="add-mymeal" data-id="' + ml.id + '" aria-label="Add ' + esc(ml.name) + '">' + svg(I.plus, 20) + '</button></div>';
+          return '<div class="item" style="padding-right:6px">' + (ml.photo ? '<span class="thumb photo"><img alt="" src="' + ml.photo + '"></span>' : '') + '<button class="grow" style="border:none;background:transparent;text-align:left;padding:0;cursor:pointer" data-act="add-mymeal" data-id="' + ml.id + '"><span class="nm">' + esc(ml.name) + '</span><span class="sb">' + esc(ml.items.map(function (i) { return i.name; }).join(', ')) + ' · ' + k(t.kcal) + ' kcal</span></button><button class="plus" data-act="add-mymeal" data-id="' + ml.id + '" aria-label="Add ' + esc(ml.name) + '">' + svg(I.plus, 20) + '</button></div>';
         }).join('') + '</section>' : '<div class="empty card">Use “Save as my meal” on the Log screen, or create one in Foods.</div>');
       }
       var rec = recentFoods();
@@ -493,7 +493,7 @@
       if (!ms.length) h += '<div class="empty">No meals yet. Build one here, or use “Save as my meal” on the Log screen.</div>';
       ms.forEach(function (m) {
         var t = totals(m.items);
-        h += '<section class="card clip"><div class="mealhead" style="padding-bottom:6px"><h2>' + esc(m.name) + '</h2><span style="font-size:16px;font-weight:700">' + k(t.kcal) + ' kcal</span></div>' +
+        h += '<section class="card clip">' + (m.photo ? '<div style="background:#fff;border-bottom:1px solid var(--line2);display:flex;justify-content:center"><img alt="" src="' + m.photo + '" style="height:160px;width:160px;object-fit:contain"></div>' : '') + '<div class="mealhead" style="padding-bottom:6px"><h2>' + esc(m.name) + '</h2><span style="font-size:16px;font-weight:700">' + k(t.kcal) + ' kcal</span></div>' +
           m.items.map(function (it) { return '<div class="between" style="padding:6px 16px;font-size:15px"><span>' + esc(it.name) + ' · ' + esc(it.label) + '</span><span class="muted">' + k(it.kcal) + '</span></div>'; }).join('') +
           '<div class="row" style="gap:8px;padding:10px 12px 12px;border-top:1px solid var(--line2);margin-top:6px"><button class="btn ghost" data-act="edit-mymeal" data-id="' + m.id + '">Edit</button><button class="btn" style="min-height:44px;font-size:15px" data-act="mymeal-today" data-id="' + m.id + '">Add to day</button></div></section>';
       });
@@ -628,7 +628,7 @@
       save(); toast('Deleted'); var t = F.type; form = null; go('#/foods' + qs({ tab: t }));
     });
   };
-  function processPhoto(file) {
+  function processPhoto(file, target) {
     var url = URL.createObjectURL(file), img = new Image();
     img.onload = function () {
       var S = 480, pad = 24, cv = document.createElement('canvas'); cv.width = S; cv.height = S;
@@ -636,7 +636,9 @@
       var sc = Math.min((S - pad * 2) / img.width, (S - pad * 2) / img.height);
       var w = img.width * sc, h = img.height * sc;
       ctx.drawImage(img, (S - w) / 2, (S - h) / 2, w, h);
-      form.f.photo = cv.toDataURL('image/jpeg', 0.85); URL.revokeObjectURL(url); rerender();
+      var data64 = cv.toDataURL('image/jpeg', 0.85); URL.revokeObjectURL(url);
+      if (target === 'meal') { if (memo.mealDraft) memo.mealDraft.photo = data64; } else form.f.photo = data64;
+      rerender();
     };
     img.onerror = function () { toast('Could not read that image'); };
     img.src = url;
@@ -647,6 +649,11 @@
     if (!memo.mealDraft) memo.mealDraft = { id: null, name: '', items: [] };
     var M = memo.mealDraft, t = totals(M.items);
     var h = '<div class="screen">' + header(M.id ? 'Edit meal' : 'New meal', '#/foods?tab=meals') +
+      '<section class="row" style="gap:14px">' +
+      '<span class="photo-edit' + (M.photo ? ' has' : '') + '">' + (M.photo ? '<img alt="Meal photo" src="' + M.photo + '">' : svg(I.camera, 30, 1.5) + '<span style="font-size:13px">Photo</span>') + '</span>' +
+      '<div class="grow" style="display:flex;flex-direction:column;gap:8px">' +
+      '<label class="btn ghost" style="position:relative">' + (M.photo ? 'Change photo' : 'Add photo') + '<input type="file" accept="image/*" data-in="mealphoto" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>' +
+      (M.photo ? '<button class="btn ghost" data-act="meal-photo-remove">Remove photo</button>' : '') + '</div></section>' +
       '<div class="field"><label for="mname">Name</label><input id="mname" class="input" data-in="mealname" value="' + esc(M.name) + '" placeholder="e.g. Usual breakfast"></div>' +
       '<section class="card clip"><div class="mealhead"><h2 style="font-size:17px">Foods</h2><span style="font-size:15px;font-weight:700">' + k(t.kcal) + ' kcal</span></div>' +
       (M.items.length ? '<div style="border-top:1px solid var(--line2)">' + M.items.map(function (it, i) {
@@ -657,6 +664,7 @@
       '</div><div class="bottombar"><div><button class="btn" data-act="meal-save">Save meal</button></div></div>';
     return h;
   };
+  actions['meal-photo-remove'] = function () { memo.mealDraft.photo = null; rerender(); };
   actions['meal-item-remove'] = function (el) { memo.mealDraft.items.splice(+el.dataset.i, 1); rerender(); };
   actions['meal-save'] = function () {
     var M = memo.mealDraft; M.name = (M.name || '').trim();
@@ -899,12 +907,57 @@
     return '<div class="screen tabbed"><h1>Settings</h1>' +
       '<h2 class="sec">Daily goals</h2><section class="card clip">' + gr('gk', 'Calories', 'kcal', 'kcal') + gr('gp', 'Protein', 'p', 'g') + gr('gc', 'Carbs', 'c', 'g') + gr('gf', 'Fat', 'f', 'g') + '</section>' +
       '<h2 class="sec">Data</h2><section class="card clip">' +
+      '<button class="setrow" data-act="export">' + svg(I.down, 20, 1.7) + '<span class="grow">Export to Excel</span>' + svg(I.right, 18) + '</button>' +
       '<button class="setrow" data-act="backup">' + svg(I.cloud, 20, 1.7) + '<span class="grow">Back up (save to Files / iCloud Drive)</span><span class="muted small">' + (data.lastBackup ? esc(data.lastBackup) : '') + '</span></button>' +
       '<label class="setrow" style="position:relative">' + svg(I.restore, 20, 1.7) + '<span class="grow">Restore from backup</span><input type="file" accept="application/json,.json" data-in="restore" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></section>' +
       '<div class="muted small" style="line-height:1.4">Your data is stored only on this iPhone. Back up regularly so you don’t lose it. Standard food values are approximate reference values (per 100 g).</div>' +
       '<div class="muted small">Food tracking ' + VERSION + ' · ' + data.entries.length + ' entries · ' + Object.keys(data.foods).length + ' own foods</div>' +
       '</div>' + tabs('settings');
   };
+  actions.export = function () {
+    var y = today().slice(0, 4), m = today().slice(0, 7);
+    modal('<h2>Export to Excel</h2><div class="pills" data-per>' + [['month', 'This month'], ['lastmonth', 'Last month'], ['year', 'This year'], ['all', 'Everything']].map(function (p, i) { return '<button class="pill' + (i === 0 ? ' on' : '') + '" data-v="' + p[0] + '">' + p[1] + '</button>'; }).join('') + '</div>' +
+      '<div class="muted small">Two sheets: daily totals (with your goals) and every food logged.</div><button class="btn" data-ok>Export</button><button class="btn ghost" data-close-btn>Cancel</button>', function (el) {
+      var per = 'month';
+      el.querySelectorAll('[data-per] .pill').forEach(function (b) { b.onclick = function () { per = b.dataset.v; el.querySelectorAll('[data-per] .pill').forEach(function (x) { x.classList.toggle('on', x === b); }); }; });
+      el.querySelector('[data-ok]').onclick = function () {
+        var from = '0000', to = '9999', label = 'all';
+        if (per === 'month') { from = m + '-01'; to = m + '-31'; label = m; }
+        if (per === 'lastmonth') { var d = pd(m + '-01'); d.setMonth(d.getMonth() - 1); var lm = ds(d).slice(0, 7); from = lm + '-01'; to = lm + '-31'; label = lm; }
+        if (per === 'year') { from = y + '-01-01'; to = y + '-12-31'; label = y; }
+        closeModal(); exportExcel(from, to, label);
+      };
+    });
+  };
+  function exportExcel(from, to, label) {
+    var list = data.entries.filter(function (e) { return e.date >= from && e.date <= to; }).sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : MEALS.findIndex(function (x) { return x[0] === a.meal; }) - MEALS.findIndex(function (x) { return x[0] === b.meal; }); });
+    if (!list.length) { toast('Nothing logged in that period'); return; }
+    function r1(n) { return Math.round(n * 10) / 10; }
+    var G = data.goals, days = {};
+    list.forEach(function (e) { var d = days[e.date] || (days[e.date] = { kcal: 0, p: 0, c: 0, f: 0 }); d.kcal += e.kcal; d.p += e.p; d.c += e.c; d.f += e.f; });
+    var daily = [['Date', 'Day', 'Calories (kcal)', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Calorie goal', 'Difference']];
+    Object.keys(days).sort().forEach(function (d) { var t = days[d]; daily.push([d, DAYS[pd(d).getDay()], Math.round(t.kcal), r1(t.p), r1(t.c), r1(t.f), G.kcal, Math.round(t.kcal - G.kcal)]); });
+    var rows = [['Date', 'Meal', 'Food', 'Amount', 'Calories (kcal)', 'Protein (g)', 'Carbs (g)', 'Fat (g)']];
+    list.forEach(function (e) { rows.push([e.date, MEAL_NAME[e.meal], e.name, e.label, Math.round(e.kcal), r1(e.p), r1(e.c), r1(e.f)]); });
+    function go2() {
+      var X = window.XLSX, wb = X.utils.book_new();
+      var s1 = X.utils.aoa_to_sheet(daily); s1['!cols'] = [{ wch: 11 }, { wch: 10 }, { wch: 14 }, { wch: 11 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 11 }];
+      var s2 = X.utils.aoa_to_sheet(rows); s2['!cols'] = [{ wch: 11 }, { wch: 15 }, { wch: 28 }, { wch: 22 }, { wch: 14 }, { wch: 11 }, { wch: 10 }, { wch: 8 }];
+      X.utils.book_append_sheet(wb, s1, 'Daily totals'); X.utils.book_append_sheet(wb, s2, 'Foods logged');
+      var out = X.write(wb, { bookType: 'xlsx', type: 'array' });
+      shareFile(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'food-tracking-' + label + '.xlsx');
+    }
+    if (window.XLSX) go2();
+    else { var sc = document.createElement('script'); sc.src = 'vendor/xlsx/xlsx.mini.min.js'; sc.onload = go2; sc.onerror = function () { toast('Could not load the Excel exporter. Check your connection.'); }; document.head.appendChild(sc); }
+  }
+  function shareFile(blob, name, done) {
+    var file; try { file = new File([blob], name, { type: blob.type }); } catch (e) { file = null; }
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: name }).then(function () { if (done) done(); }).catch(function () {});
+    } else {
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); if (done) done();
+    }
+  }
   actions.backup = function () {
     var name = 'food-tracking-backup-' + today() + '.json';
     var blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
@@ -953,6 +1006,7 @@
     var t = e.target;
     if (t.dataset.in === 'jump' && t.value) go('#/log' + qs({ d: t.value }));
     else if (t.dataset.in === 'photo' && t.files && t.files[0]) processPhoto(t.files[0]);
+    else if (t.dataset.in === 'mealphoto' && t.files && t.files[0]) processPhoto(t.files[0], 'meal');
     else if (t.dataset.in === 'labels' && t.files && t.files.length) { scanFiles(t.files); t.value = ''; }
     else if (t.dataset.in === 'labelone' && t.files && t.files[0]) {
       var file = t.files[0]; form.scanning = true; rerender();
