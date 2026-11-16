@@ -357,7 +357,7 @@
   }
   // several labels pasted at once (e.g. from the Shortcut), separated by a line of ===== or ---
   function splitLabels(text) {
-    return String(text || '').split(/\n\s*(?:={3,}|-{5,}|#{3,})\s*\n/).map(function (t) { return t.trim(); }).filter(Boolean);
+    return String(text || '').split(/\s*={3,}\s*|\n\s*(?:-{5,}|#{3,})\s*\n/).map(function (t) { return t.trim(); }).filter(Boolean);
   }
   // "~800 kcal", "Calories: 750–850", a ChatGPT answer with a Total line...
   function parseEstimate(text) {
@@ -410,7 +410,7 @@
         if (nn === qn) bonus = Math.max(bonus, 6);
         else if (nn.indexOf(qn) === 0) bonus = Math.max(bonus, 3);
       });
-      res.push({ food: food, score: score + bonus + (food.type === 'custom' ? 2 : 0) - food.name.length / 100 });
+      res.push({ food: food, score: score + bonus + (food.type === 'custom' ? 4 : 0) - food.name.length / 100 });
     });
     res.sort(function (a, b) { return b.score - a.score; });
     return res.map(function (r) { return r.food; });

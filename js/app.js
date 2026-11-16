@@ -4,7 +4,7 @@
   var C = window.FT_CORE;
   var BUILTIN = window.FT_FOODS;
   var KEY = 'ft-data-v1';
-  var VERSION = '1.3.0';
+  var VERSION = '1.4.0';
 
   var MEALS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['snack', 'Afternoon snack'], ['dinner', 'Dinner'], ['extra', 'Extra']];
   var MEAL_NAME = {}; MEALS.forEach(function (m) { MEAL_NAME[m[0]] = m[1]; });
@@ -476,10 +476,10 @@
 
   // FOODS
   screens['/foods'] = function (q) {
-    var tab = q.tab || 'custom';
+    var tab = q.tab === 'meals' ? 'meals' : 'foods';
     var h = '<div class="screen tabbed"><h1>Foods</h1>' +
       '<div class="card search">' + svg(I.search, 20) + '<input data-in="foodsearch" type="search" placeholder="Search" aria-label="Search" value="' + esc(memo.foodsTerm || '') + '" autocomplete="off"></div>' +
-      '<div class="seg">' + [['standard', 'Standard'], ['custom', 'Custom'], ['meals', 'My meals']].map(function (t) { return '<button class="' + (tab === t[0] ? 'on' : '') + '" data-act="foodtab" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+      '<div class="seg">' + [['foods', 'Foods'], ['meals', 'My meals']].map(function (t) { return '<button class="' + (tab === t[0] ? 'on' : '') + '" data-act="foodtab" data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>' +
       '<div data-foodlist></div></div>' + tabs('foods');
     return h;
   };
@@ -498,27 +498,20 @@
           '<div class="row" style="gap:8px;padding:10px 12px 12px;border-top:1px solid var(--line2);margin-top:6px"><button class="btn ghost" data-act="edit-mymeal" data-id="' + m.id + '">Edit</button><button class="btn" style="min-height:44px;font-size:15px" data-act="mymeal-today" data-id="' + m.id + '">Add to day</button></div></section>';
       });
     } else {
-      var list = allFoods().filter(function (f) { return f.type === tab; });
-      if (term) { var found = C.search(term, list); list = found; }
-      else list.sort(function (a, b) { return a.name.localeCompare(b.name); });
-      h += tab === 'custom'
-        ? '<div class="row" style="gap:10px"><button class="dashed" data-act="new-food" data-type="custom">' + svg(I.plus, 18) + 'New custom food</button><a class="dashed" href="#/scan">' + svg(I.scan, 18, 1.7) + 'Scan labels</a></div>'
-        : '<button class="dashed" data-act="new-food" data-type="' + tab + '">' + svg(I.plus, 18) + 'New ' + tab + ' food</button>';
-      if (tab === 'custom') {
-        if (!list.length) h += '<div class="empty">' + (term ? 'No custom foods found.' : 'Your own products go here, like “My yogurt”.') + '</div>';
-        else h += '<div class="grid2">' + list.map(function (f) {
-          return '<div class="tile" style="position:relative"><button data-act="open-food" data-id="' + esc(f.id) + '" style="border:none;background:transparent;padding:0;text-align:left;display:flex;flex-direction:column;gap:8px;cursor:pointer;width:100%"><span class="pic" style="width:100%">' + (f.photo ? '<img alt="" src="' + f.photo + '">' : svg(I.bowl, 56, 1.1)) + '</span><span><span style="display:block;font-size:16px;font-weight:700">' + esc(f.name) + '</span><span class="muted small">' + perText(f) + '</span></span></button><span style="position:absolute;top:12px;right:12px;background:rgba(255,255,255,.9);border-radius:12px">' + starBtn(f) + '</span></div>';
-        }).join('') + '</div>';
-      } else {
-        h += '<div class="muted small">Values per 100 g · protein · carbs · fat</div>';
-        h += list.length ? '<section class="card clip">' + list.map(function (f) {
-          return '<div class="item" style="padding-right:4px">' + thumb(f) + '<button class="grow" data-act="open-food" data-id="' + esc(f.id) + '" style="border:none;background:transparent;text-align:left;padding:0;cursor:pointer;display:flex;align-items:center;gap:8px"><span class="grow"><span class="nm">' + esc(f.name) + '</span><span class="sb">P ' + g1(f.p) + ' g · C ' + g1(f.c) + ' g · F ' + g1(f.f) + ' g</span></span><span style="font-size:15px;font-weight:700">' + k(f.kcal) + '</span></button>' + starBtn(f) + '</div>';
-        }).join('') + '</section>' : '<div class="empty">No foods found.</div>';
-      }
+      var list = allFoods();
+      if (term) list = C.search(term, list);
+      else list.sort(function (x, y) { return x.name.localeCompare(y.name); });
+      h += '<div class="row" style="gap:10px"><button class="dashed" data-act="new-food" data-type="custom">' + svg(I.plus, 18) + 'New food</button><a class="dashed" href="#/scan">' + svg(I.scan, 18, 1.7) + 'Scan labels</a></div>';
+      h += '<div class="muted small">' + list.length + ' foods · values per 100 g (or per unit) · protein · carbs · fat</div>';
+      h += list.length ? '<section class="card clip">' + list.map(function (f) {
+        var per = f.basis === 'unit' ? ' / ' + (f.unitName || 'unit') : f.liquid ? ' / 100 ml' : '';
+        return '<div class="item" style="padding-right:4px">' + thumb(f) + '<button class="grow" data-act="open-food" data-id="' + esc(f.id) + '" style="border:none;background:transparent;text-align:left;padding:0;cursor:pointer;display:flex;align-items:center;gap:8px"><span class="grow"><span class="nm">' + esc(f.name) + '</span><span class="sb">' + (f.type === 'custom' ? 'Custom · ' : '') + 'P ' + g1(f.p) + ' g · C ' + g1(f.c) + ' g · F ' + g1(f.f) + ' g</span></span><span style="font-size:15px;font-weight:700;text-align:right">' + k(f.kcal) + '<span class="muted" style="display:block;font-size:11px;font-weight:400">kcal' + esc(per) + '</span></span></button>' + starBtn(f) + '</div>';
+      }).join('') + '</section>' : '<div class="empty">No foods found. <button class="linkbtn" data-act="create-from-foods">Create “' + esc(term) + '”</button></div>';
     }
     box.innerHTML = h;
   }
   screens['/foods'].mount = function () { renderFoodList(); };
+  actions['create-from-foods'] = function () { go('#/food/new' + qs({ type: 'custom', name: memo.foodsTerm || '' })); };
   actions.foodtab = function (el) { go('#/foods' + qs({ tab: el.dataset.v })); };
   actions['new-food'] = function (el) { go('#/food/new' + qs({ type: el.dataset.type })); };
   actions['open-food'] = function (el) { go('#/food/edit' + qs({ id: el.dataset.id })); };
@@ -541,7 +534,7 @@
     }
     var F = form.f, isUnit = F.basis === 'unit';
     var title = form.isNew ? 'New ' + F.type + ' food' : 'Edit food';
-    var h = '<div class="screen">' + header(title, '#/foods' + qs({ tab: F.type })) +
+    var h = '<div class="screen">' + header(title, '#/foods') +
       '<label class="btn outline" style="position:relative">' + svg(I.scan, 20, 1.7) + (form.scanning ? 'Reading label…' : 'Scan nutrition label') + '<input type="file" accept="image/*" data-in="labelone" style="position:absolute;inset:0;opacity:0;cursor:pointer"' + (form.scanning ? ' disabled' : '') + '></label>' +
       '<div class="muted small" style="text-align:center;margin-top:-6px">Reads the values per 100 g for you to check · <button class="linkbtn light" style="min-height:0;padding:0;display:inline;text-decoration:underline" data-act="form-paste-label">or paste the label text</button></div>' +
       (form.builtin ? '<div class="muted small" style="margin-top:-6px">Standard food. Your changes replace the reference values on this device.</div>' : '') +
@@ -618,14 +611,14 @@
     F.id = form.id; F.builtin = false;
     data.foods[F.id] = F;
     if (form.fav) data.favs[F.id] = true; else delete data.favs[F.id];
-    save(); toast('Saved'); var t = F.type; form = null; go('#/foods' + qs({ tab: t }));
+    save(); toast('Saved'); var t = F.type; form = null; go('#/foods');
   };
   actions['delete-food'] = function () {
     var F = form.f;
     confirmBox('Delete “' + F.name + '”?', 'Delete', function () {
       if (form.builtin) data.hidden[form.id] = true;
       delete data.foods[form.id]; delete data.favs[form.id];
-      save(); toast('Deleted'); var t = F.type; form = null; go('#/foods' + qs({ tab: t }));
+      save(); toast('Deleted'); var t = F.type; form = null; go('#/foods');
     });
   };
   function processPhoto(file, target) {
@@ -795,7 +788,7 @@
   screens['/scan'] = function () {
     if (!memo.scan) memo.scan = { drafts: [], busy: false, msg: '' };
     var S = memo.scan;
-    var h = '<div class="screen">' + header('Scan labels', '#/foods?tab=custom') +
+    var h = '<div class="screen">' + header('Scan labels', '#/foods') +
       '<div class="muted" style="font-size:15px;line-height:1.4;margin-top:-6px">Add the nutrition tables of your products, one or many at a time. Then give each a name, check the numbers and save them one by one or all together.</div>' +
       '<section class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">' +
       '<div><div style="font-size:16px;font-weight:700">Recommended: iPhone text recognition</div><div class="muted small" style="line-height:1.4">Pick as many label photos as you like; the iPhone reads them and you come back here to paste them all at once. Needs the “Food labels” shortcut (set up once). <button class="linkbtn light" style="min-height:0;padding:0;display:inline;text-decoration:underline" data-act="shortcut-help">How to set it up</button></div></div>' +
@@ -830,16 +823,14 @@
     modal('<img alt="Label photo" src="' + d.thumb + '" style="width:100%;border-radius:12px;background:#fff"><button class="btn ghost" data-close-btn>Close</button>');
   };
   actions['shortcut-help'] = function () {
-    modal('<h2>“Food labels” shortcut</h2><div style="font-size:15px;line-height:1.45;max-height:60vh;overflow:auto">' +
-      '<p style="margin:0 0 8px">Uses the iPhone’s own text recognition, on the device. Create it once in the <b>Shortcuts</b> app → <b>+</b>, name it <b>Food labels</b>, and add these actions:</p><ol style="margin:0;padding-left:20px">' +
-      '<li><b>Select Photos</b> — turn on <i>Select Multiple</i>.</li>' +
-      '<li><b>Repeat with Each</b> item in <i>Photos</i>.</li>' +
-      '<li>Inside the repeat: <b>Extract Text from Image</b> (Repeat Item).</li>' +
-      '<li>Inside the repeat: <b>Text</b> with <i>Text from Image</i>, a new line and <code>=====</code>.</li>' +
-      '<li>End of the repeat, then <b>Combine Text</b> (Repeat Results, New Lines).</li>' +
-      '<li><b>Copy to Clipboard</b>.</li>' +
-      '<li><b>Show Notification</b>: “Labels copied”.</li></ol>' +
-      '<p style="margin:8px 0 0">Run it, pick your label photos, then come back here and tap <b>Paste labels</b>. Tip: in the shortcut’s settings turn on <i>Show in Share Sheet</i> to run it from Photos with several photos selected.</p></div>' +
+    modal('<h2>“Food labels” shortcut</h2><div style="font-size:15px;line-height:1.45;max-height:62vh;overflow:auto">' +
+      '<p style="margin:0 0 8px">Set it up once in the <b>Shortcuts</b> app: tap <b>+</b>, name it exactly <b>Food labels</b> and add these actions (search them at the bottom):</p><ol style="margin:0;padding-left:20px">' +
+      '<li><b>Select Photos</b> (Seleccionar fotos): tap the arrow and turn on <i>Select Multiple</i>.</li>' +
+      '<li><b>Repeat with Each</b> (Repetir con cada): item in <i>Photos</i>.</li>' +
+      '<li><b>Extract Text from Image</b> (Extraer texto de la imagen): drop it <u>inside</u> the repeat; it should say <i>Repeat Item</i>.</li>' +
+      '<li>Below <i>End Repeat</i>: <b>Combine Text</b> (Combinar texto) with <i>Repeat Results</i>; change the separator to <i>Custom</i> and type <code>=====</code></li>' +
+      '<li><b>Copy to Clipboard</b> (Copiar al portapapeles).</li></ol>' +
+      '<p style="margin:8px 0 0">Then here: <b>1 · Choose photos</b> → pick all your labels → come back with ◀ at the top left → <b>2 · Paste labels</b>.</p></div>' +
       '<button class="btn ghost" data-close-btn>Close</button>');
   };
   function loadOcr() {
@@ -897,7 +888,7 @@
       if (D[i].kcal == null) { toast('Add the calories of “' + D[i].name + '”'); return; }
     }
     D.forEach(function (d, i) { saveDraft(d, i); });
-    var n = D.length; save(); toast(n + ' food' + (n > 1 ? 's' : '') + ' saved'); memo.scan = null; go('#/foods?tab=custom');
+    var n = D.length; save(); toast(n + ' food' + (n > 1 ? 's' : '') + ' saved'); memo.scan = null; go('#/foods');
   };
 
   // SETTINGS
