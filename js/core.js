@@ -231,6 +231,12 @@
     var segs = splitSegments(text);
     var out = [];
     segs.forEach(function (s) {
+      var km = norm(s).match(/^(.*?)\s*~?\s*(\d+(?:\.\d+)?)\s*(kcal|calorias|calories|cal)\b\s*(.*)$/);
+      if (km) {
+        var nm = (km[1] + ' ' + km[4]).replace(/\b(de|aprox|aproximadamente|unas|unos|about|around)\b/g, ' ').replace(/\s+/g, ' ').trim();
+        out.push({ text: s, food: null, estimate: { kcal: parseFloat(km[2]), name: nm ? nm.charAt(0).toUpperCase() + nm.slice(1) : 'Unknown' } });
+        return;
+      }
       var r = parseSegment(s, idx);
       // "un plátano y medio": a lone fraction joins the previous item
       if (!r.food && out.length && /^(y\s+)?(medio|media|half|1\/2|0\.5)$/i.test(norm(s)) && out[out.length - 1].food) {
@@ -239,6 +245,96 @@
       }
       out.push(r);
     });
+    return out;
+  }
+
+  // ---------- nutrition labels (OCR text) ----------
+  // OCR often reads the unit "g" as a 9 ("3,0 g" -> "3,09"): undo that when no "g" follows
+  function labelNum(seg) {
+    var m = String(seg).match(/<?\s*(\d+(?:[.,]\d+)?)(\s*g\b|g)?/);
+    if (!m) return null;
+    var raw = m[1], hasG = !!m[2];
+    if (!hasG && /[.,]\d{2,}$/.test(raw) && /9$/.test(raw)) raw = raw.slice(0, -1);
+    var v = parseFloat(raw.replace(',', '.'));
+    if (!hasG && v > 100 && /9$/.test(raw) && raw.indexOf(',') < 0 && raw.indexOf('.') < 0) v = parseFloat(raw.slice(0, -1));
+    return isNaN(v) ? null : v;
+  }
+  function parseLabel(text) {
+    var t = String(text || '').replace(/\bO(?=[.,]\d)/g, '0');
+    var lines = t.split(/\n+/).map(function (l) { return l.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }).filter(Boolean);
+    var flat = lines.join('\n').replace(/(\d)\s*,\s*(\d)/g, '$1.$2');
+    var res = { kcal: null, p: null, c: null, f: null };
+    var km = flat.match(/(\d+(?:\.\d+)?)[^\d\n]{0,12}?k\s*c\s*a\s*l/);
+    var kj = flat.match(/(\d+(?:\.\d+)?)\s*k\s*[j)]/);
+    var fromKj = kj ? parseFloat(kj[1]) / 4.184 : null;
+    if (km) res.kcal = parseFloat(km[1]);
+    if (res.kcal != null && fromKj != null && Math.abs(res.kcal - fromKj) > fromKj * 0.15) {
+      var cut = Math.floor(res.kcal / 10); // an extra digit read from the next column
+      res.kcal = Math.abs(cut - fromKj) <= fromKj * 0.15 ? cut : Math.round(fromKj);
+    }
+    if (res.kcal == null && fromKj != null) res.kcal = Math.round(fromKj);
+    var KEYS = /(grasa|lipido|\bfat\b|hidratos|carbohidrat|carbohydrat|glucido|protein|azucar|sugar|saturad|saturat|fibra|fibre|fiber|sal\b|salt|sodio|sodium|energ)/;
+    function numericOnly(l) { return !!l && /\d/.test(l) && !/[a-z]{3,}/.test(l.replace(/kcal|kj|\bg\b/g, '')); }
+    // a tilted photo can put a row's numbers just above or below its name: find which, for the whole label
+    var up = 0, down = 0;
+    lines.forEach(function (l, i) {
+      if (!KEYS.test(l) || /\d/.test(l)) return;
+      var a = numericOnly(lines[i - 1]), b = numericOnly(lines[i + 1]);
+      if (a && !b) up++; if (b && !a) down++;
+    });
+    var order = up > down ? [-1, 1] : [1, -1];
+    function grab(re, not) {
+      for (var i = 0; i < lines.length; i++) {
+        var l = lines[i]; if (!re.test(l) || (not && not.test(l))) continue;
+        var v = labelNum(l.replace(re, ''));
+        for (var o = 0; o < 2 && v == null; o++) if (numericOnly(lines[i + order[o]])) v = labelNum(lines[i + order[o]]);
+        if (v != null) return v;
+      }
+      return null;
+    }
+    res.f = grab(/^.*?(grasas?|materia grasa|lipidos|\bfa?t)\b[^0-9<]*/, /saturad|satur|monoinsat|poliinsat|trans/);
+    res.c = grab(/^.*?(hidratos de carbono|carbohidratos|carbohydrates?|glucidos)\b[^0-9<]*/, /azucar|sugar/);
+    res.p = grab(/^.*?(proteinas?|proteins?)\b[^0-9<]*/);
+    ['p', 'c', 'f'].forEach(function (key) {
+      if (res[key] != null && res[key] > 100) res[key] = null;
+      // "3,0 g" read as "30g": the macro alone can't have more calories than the whole food
+      var kpg = key === 'f' ? 9 : 4;
+      if (res[key] != null && res.kcal && res[key] * kpg > res.kcal * 1.1 && (res[key] / 10) * kpg <= res.kcal * 1.1) res[key] = res[key] / 10;
+    });
+    res.found = ['kcal', 'p', 'c', 'f'].filter(function (key) { return res[key] != null; }).length;
+    // do the numbers add up? (4 kcal/g protein & carbs, 9 kcal/g fat)
+    if (res.found === 4 && res.kcal) { var est = 4 * res.p + 4 * res.c + 9 * res.f; res.consistent = Math.abs(est - res.kcal) <= Math.max(25, res.kcal * 0.25); }
+    return res;
+  }
+  // "~800 kcal", "Calories: 750–850", a ChatGPT answer with a Total line...
+  function parseEstimate(text) {
+    var lines = String(text || '').split(/\n+/).map(function (l) {
+      return l.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/(\d)[.,](\d{3})\b/g, '$1$2').replace(/(\d),(\d)/g, '$1.$2');
+    });
+    function val(l, re) {
+      var m = l.match(re); if (!m) return null;
+      var a = parseFloat(m[1]), b = m[2] ? parseFloat(m[2]) : null;
+      return b != null && b > a ? (a + b) / 2 : a;
+    }
+    var R = '(\\d+(?:\\.\\d+)?)(?:\\s*(?:-|–|—|a|to)\\s*(\\d+(?:\\.\\d+)?))?';
+    var reK = [new RegExp('~?\\s*' + R + '\\s*(?:kcal|calorias|calories|cal)\\b'), new RegExp('(?:kcal|calorias|calories|energia|energy)[^0-9]{0,20}' + R)];
+    var reP = new RegExp('(?:proteinas?|proteins?)[^0-9]{0,20}' + R), reP2 = new RegExp(R + '\\s*g\\s*(?:de\\s*)?(?:proteinas?|proteins?)');
+    var reC = new RegExp('(?:hidratos(?: de carbono)?|carbohidratos|carbs|carbohydrates?)[^0-9]{0,20}' + R), reC2 = new RegExp(R + '\\s*g\\s*(?:de\\s*)?(?:hidratos|carbohidratos|carbs)');
+    var reF = new RegExp('(?:grasas?|fat)[^0-9]{0,20}' + R), reF2 = new RegExp(R + '\\s*g\\s*(?:de\\s*)?(?:grasas?|fat)');
+    function pick(res1, res2) {
+      var total = null, all = [];
+      lines.forEach(function (l) {
+        var v = null;
+        res1.concat(res2 || []).forEach(function (re) { if (v == null) v = val(l, re); });
+        if (v == null) return;
+        all.push(v);
+        if (/total|en total|aprox|estimad|overall/.test(l)) total = v;
+      });
+      if (total != null) return total;
+      if (!all.length) return null;
+      return Math.max.apply(null, all);
+    }
+    var out = { kcal: pick(reK), p: pick([reP], [reP2]), c: pick([reC], [reC2]), f: pick([reF], [reF2]) };
     return out;
   }
 
@@ -270,7 +366,7 @@
   var api = {
     norm: norm, stem: stem, tokens: tokens, fmtQty: fmtQty, fmtNum: fmtNum, gramsOf: gramsOf,
     nutrition: nutrition, amountLabel: amountLabel, portionLabel: portionLabel, defaultAmount: defaultAmount,
-    parse: parse, search: search, shortName: shortName, unitWord: unitWord
+    parse: parse, search: search, parseLabel: parseLabel, parseEstimate: parseEstimate, shortName: shortName, unitWord: unitWord
   };
   root.FT_CORE = api;
   if (typeof module !== 'undefined') module.exports = api;

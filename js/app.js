@@ -4,7 +4,7 @@
   var C = window.FT_CORE;
   var BUILTIN = window.FT_FOODS;
   var KEY = 'ft-data-v1';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
 
   var MEALS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['snack', 'Afternoon snack'], ['dinner', 'Dinner'], ['extra', 'Extra']];
   var MEAL_NAME = {}; MEALS.forEach(function (m) { MEAL_NAME[m[0]] = m[1]; });
@@ -28,7 +28,8 @@
     camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
     alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
     down: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>', cloud: '<path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"/>',
-    restore: '<path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/>', bowl: '<path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M9 7c1-1.5 5-1.5 6 0"/>'
+    restore: '<path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/>', scan: '<path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"/><path d="M8 10h8M8 14h5"/>',
+    question: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.4M12 16.8v.01"/>', bowl: '<path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M9 7c1-1.5 5-1.5 6 0"/>'
   };
 
   // ---------- helpers ----------
@@ -66,6 +67,7 @@
     return out;
   }
   function getFood(id) {
+    if (id === 'unknown') return null;
     if (data.foods[id]) return data.foods[id];
     for (var i = 0; i < BUILTIN.length; i++) if (BUILTIN[i].id === id) return BUILTIN[i];
     return null;
@@ -94,9 +96,15 @@
     return k(f.kcal) + ' kcal / 100 ' + C.unitWord(f);
   }
   function thumb(f, cls) {
+    if (f === 'unknown') return '<span class="thumb std">' + svg(I.question, 22, 1.6) + '</span>';
     if (f && f.photo) return '<span class="thumb photo ' + (cls || '') + '"><img alt="" src="' + f.photo + '"></span>';
     if (f && f.type === 'custom') return '<span class="thumb photo">' + svg(I.bowl, 22, 1.6) + '</span>';
     return '<span class="thumb std">' + svg(I.leaf, 20, 1.6) + '</span>';
+  }
+
+  function starBtn(f) {
+    var on = !!data.favs[f.id];
+    return '<button class="plus" data-act="fav-toggle" data-id="' + esc(f.id) + '" aria-pressed="' + on + '" aria-label="' + (on ? 'Remove ' : 'Add ') + esc(f.name) + (on ? ' from' : ' to') + ' favorites">' + svg(I.star, 20, 1.5, on ? ' fill="currentColor"' : '') + '</button>';
   }
 
   // ---------- UI plumbing ----------
@@ -181,7 +189,7 @@
       h += '<section class="card clip"><div class="mealhead"><h2>' + m[1] + '</h2><span style="font-size:15px;font-weight:700"' + (es.length ? '' : ' class="muted"') + '>' + k(mt.kcal) + ' kcal</span></div>';
       if (es.length) h += '<div style="border-top:1px solid var(--line2)">' + es.map(function (e) {
         var f = getFood(e.foodId);
-        return '<button class="item" data-act="edit-entry" data-id="' + e.id + '">' + thumb(f) + '<span class="grow"><span class="nm">' + esc(e.name) + '</span><span class="sb">' + esc(e.label) + (f && f.type === 'custom' ? ' · Custom' : '') + '</span></span><span style="font-size:15px">' + k(e.kcal) + '</span></button>';
+        return '<button class="item" data-act="edit-entry" data-id="' + e.id + '">' + thumb(e.foodId === 'unknown' ? 'unknown' : f) + '<span class="grow"><span class="nm">' + esc(e.name) + '</span><span class="sb">' + esc(e.label) + (f && f.type === 'custom' ? ' · Custom' : '') + '</span></span><span style="font-size:15px">' + k(e.kcal) + '</span></button>';
       }).join('') + '</div>';
       h += '<div class="mealfoot"><a class="linkbtn" href="#/add' + qs({ d: d, m: m[0] }) + '">' + svg(I.plus, 18) + 'Add food</a>' +
         (es.length ? '<button class="linkbtn light" data-act="save-meal" data-m="' + m[0] + '">Save as my meal</button>' : '') + '</div></section>';
@@ -190,7 +198,10 @@
     return h;
   };
   actions.day = function (el) { var r = route(); go('#/log' + qs({ d: addDays(r.q.d || today(), +el.dataset.n) })); };
-  actions['edit-entry'] = function (el) { go('#/amount' + qs({ entry: el.dataset.id })); };
+  actions['edit-entry'] = function (el) {
+    var e = data.entries.filter(function (x) { return x.id === el.dataset.id; })[0];
+    go((e && e.foodId === 'unknown' ? '#/unknown' : '#/amount') + qs({ entry: el.dataset.id }));
+  };
   actions['save-meal'] = function (el) {
     var r = route(), d = r.q.d || today();
     var es = entriesOn(d).filter(function (e) { return e.meal === el.dataset.m; });
@@ -206,6 +217,7 @@
     var title = ctx === 'meal' ? 'Add to my meal' : ctx === 'quick' ? 'Choose food' : 'Add to ' + MEAL_NAME[m];
     return '<div class="screen">' + header(title, ctx === 'meal' ? '#/meal' : ctx === 'quick' ? '#/quick' + qs({ d: q.d }) : '#/log' + qs({ d: q.d })) +
       '<div class="card search">' + svg(I.search, 20) + '<input data-in="search" type="search" placeholder="Search standard and custom foods" aria-label="Search foods" value="' + esc(q.q || '') + '" autocomplete="off"></div>' +
+      (ctx === 'log' ? '<a class="card item" style="border-top:1px solid var(--line)" href="#/unknown' + qs({ d: q.d, m: m }) + '">' + thumb('unknown') + '<span class="grow"><span class="nm">Unknown / estimate</span><span class="sb">Restaurant or anything without values, e.g. ~800 kcal</span></span>' + svg(I.right, 18) + '</a>' : '') +
       '<div data-results></div></div>';
   };
   function addResults(q) {
@@ -213,7 +225,7 @@
     var ctx = q.ctx || 'log';
     function row(f) {
       return '<div class="item" style="padding-right:6px">' + thumb(f) + '<button class="grow" style="border:none;background:transparent;text-align:left;padding:0;cursor:pointer" data-act="pick" data-id="' + esc(f.id) + '"><span class="nm">' + esc(f.name) + '</span><span class="sb">' + (f.type === 'custom' ? 'Custom' : 'Standard') + ' · ' + perText(f) + '</span></button>' +
-        '<button class="plus" data-act="quickadd" data-id="' + esc(f.id) + '" aria-label="Add ' + esc(f.name) + '">' + svg(I.plus, 20) + '</button></div>';
+        starBtn(f) + '<button class="plus" data-act="quickadd" data-id="' + esc(f.id) + '" aria-label="Add ' + esc(f.name) + '">' + svg(I.plus, 20) + '</button></div>';
     }
     var h = '';
     if (term.trim()) {
@@ -222,7 +234,7 @@
       h += '<button class="dashed" data-act="create-from-search">' + svg(I.plus, 18) + 'Create “' + esc(term.trim()) + '” as custom food</button>';
     } else {
       var favs = allFoods().filter(function (f) { return data.favs[f.id]; });
-      h += '<h2 class="sec">Favorites</h2>' + (favs.length ? '<section class="card clip">' + favs.map(row).join('') + '</section>' : '<div class="empty card">Tap the star on a food to add it here.</div>');
+      h += '<h2 class="sec">Favorites</h2>' + (favs.length ? '<section class="card clip">' + favs.map(row).join('') + '</section>' : '<div class="empty card">Tap the star next to a food to add it here.</div>');
       if (ctx === 'log') {
         h += '<h2 class="sec">My meals</h2>' + (data.meals.length ? '<section class="card clip">' + data.meals.map(function (ml) {
           var t = totals(ml.items);
@@ -236,6 +248,12 @@
   }
   screens['/add'].mount = function (q) { addResults(q); };
   function amountParams(id) { var q = route().q; return qs({ food: id, d: q.d, m: q.m, ctx: q.ctx, seg: q.seg }); }
+  actions['fav-toggle'] = function (el) {
+    var id = el.dataset.id, on = !data.favs[id];
+    if (on) data.favs[id] = true; else delete data.favs[id];
+    save(); toast(on ? 'Added to favorites' : 'Removed from favorites');
+    if (current === '/add') addResults(route().q); else if (current === '/foods') renderFoodList();
+  };
   actions.pick = function (el) { go('#/amount' + amountParams(el.dataset.id)); };
   actions.quickadd = function (el) {
     var q = route().q, f = getFood(el.dataset.id); if (!f) return;
@@ -345,6 +363,7 @@
     amt.a.qty = q; rerender();
   };
   actions.meal = function (el) {
+    if (current === '/unknown') { est.meal = el.dataset.v; rerender(); return; }
     if (current === '/quick') { memo.quick.meal = el.dataset.v; rerender(); return; }
     if (amt) { amt.meal = el.dataset.v; rerender(); }
   };
@@ -389,7 +408,8 @@
     var items = [], unrec = [];
     parsed.forEach(function (r, i) {
       if (Q.removed[i]) return;
-      if (r.food) items.push({ seg: i, food: r.food, amount: r.amount, unsure: r.unsure || r.assumed, text: r.text });
+      if (r.estimate) items.push({ seg: i, estimate: r.estimate, text: r.text });
+      else if (r.food) items.push({ seg: i, food: r.food, amount: r.amount, unsure: r.unsure || r.assumed, text: r.text });
       else unrec.push({ seg: i, text: r.text });
     });
     Q.extra.forEach(function (x, j) { var f = getFood(x.foodId); if (f) items.push({ extra: j, food: f, amount: x.amount }); });
@@ -399,12 +419,12 @@
     var box = document.querySelector('[data-quick]'); if (!box) return;
     var R = quickItems(), total = 0, h = '';
     if (R.items.length) {
-      R.items.forEach(function (it) { it.n = C.nutrition(it.food, it.amount); total += it.n.kcal; });
+      R.items.forEach(function (it) { it.n = it.estimate ? { kcal: it.estimate.kcal } : C.nutrition(it.food, it.amount); total += it.n.kcal; });
       h += '<section class="card clip"><div class="mealhead"><h2 style="font-size:17px">Recognised</h2><span style="font-size:15px;font-weight:700">' + k(total) + ' kcal</span></div><div style="border-top:1px solid var(--line2)">' +
         R.items.map(function (it) {
           var key = it.extra != null ? 'x' + it.extra : 's' + it.seg;
           return '<div class="item" style="cursor:default;padding-right:6px">' + (it.unsure ? '<span class="warn" aria-label="Check this">?</span>' : '<span class="ok" aria-hidden="true">' + svg(I.check, 14, 2.4) + '</span>') +
-            '<span class="grow"><span class="nm">' + esc(it.food.name) + '</span><span class="sb">' + esc(C.amountLabel(it.food, it.amount)) + (it.unsure ? ' · check: “' + esc(it.text) + '”' : '') + '</span></span><span style="font-size:15px">' + k(it.n.kcal) + '</span>' +
+            '<span class="grow"><span class="nm">' + esc(it.estimate ? it.estimate.name : it.food.name) + '</span><span class="sb">' + esc(it.estimate ? 'Estimate' : C.amountLabel(it.food, it.amount)) + (it.unsure ? ' · check: “' + esc(it.text) + '”' : '') + '</span></span><span style="font-size:15px">' + k(it.n.kcal) + '</span>' +
             (it.unsure ? '<button class="xbtn" data-act="quick-change" data-seg="' + it.seg + '" aria-label="Change">' + svg(I.search, 18) + '</button>' : '') +
             '<button class="xbtn" data-act="quick-remove" data-key="' + key + '" aria-label="Remove">' + svg(I.x, 18) + '</button></div>';
         }).join('') + '</div></section>';
@@ -432,7 +452,10 @@
   actions['quick-add'] = function () {
     var q = route().q, d = q.d || today(), R = quickItems();
     if (!R.items.length) return;
-    R.items.forEach(function (it) { data.entries.push(makeEntry(it.food, it.amount, d, memo.quick.meal)); });
+    R.items.forEach(function (it) {
+      if (it.estimate) data.entries.push({ id: uid(), date: d, meal: memo.quick.meal, foodId: 'unknown', name: it.estimate.name, amount: { mode: 'estimate' }, label: 'Estimate', kcal: it.estimate.kcal, p: 0, c: 0, f: 0, t: Date.now() });
+      else data.entries.push(makeEntry(it.food, it.amount, d, memo.quick.meal));
+    });
     save(); toast(R.items.length + ' item' + (R.items.length > 1 ? 's' : '') + ' added to ' + MEAL_NAME[memo.quick.meal]);
     memo.quick = null; go('#/log' + qs({ d: d }));
   };
@@ -478,16 +501,18 @@
       var list = allFoods().filter(function (f) { return f.type === tab; });
       if (term) { var found = C.search(term, list); list = found; }
       else list.sort(function (a, b) { return a.name.localeCompare(b.name); });
-      h += '<button class="dashed" data-act="new-food" data-type="' + tab + '">' + svg(I.plus, 18) + 'New ' + tab + ' food</button>';
+      h += tab === 'custom'
+        ? '<div class="row" style="gap:10px"><button class="dashed" data-act="new-food" data-type="custom">' + svg(I.plus, 18) + 'New custom food</button><a class="dashed" href="#/scan">' + svg(I.scan, 18, 1.7) + 'Scan labels</a></div>'
+        : '<button class="dashed" data-act="new-food" data-type="' + tab + '">' + svg(I.plus, 18) + 'New ' + tab + ' food</button>';
       if (tab === 'custom') {
         if (!list.length) h += '<div class="empty">' + (term ? 'No custom foods found.' : 'Your own products go here, like “My yogurt”.') + '</div>';
         else h += '<div class="grid2">' + list.map(function (f) {
-          return '<button class="tile" data-act="open-food" data-id="' + esc(f.id) + '"><span class="pic">' + (f.photo ? '<img alt="" src="' + f.photo + '">' : svg(I.bowl, 56, 1.1)) + '</span><span><span style="display:block;font-size:16px;font-weight:700">' + esc(f.name) + '</span><span class="muted small">' + perText(f) + '</span></span></button>';
+          return '<div class="tile" style="position:relative"><button data-act="open-food" data-id="' + esc(f.id) + '" style="border:none;background:transparent;padding:0;text-align:left;display:flex;flex-direction:column;gap:8px;cursor:pointer;width:100%"><span class="pic" style="width:100%">' + (f.photo ? '<img alt="" src="' + f.photo + '">' : svg(I.bowl, 56, 1.1)) + '</span><span><span style="display:block;font-size:16px;font-weight:700">' + esc(f.name) + '</span><span class="muted small">' + perText(f) + '</span></span></button><span style="position:absolute;top:12px;right:12px;background:rgba(255,255,255,.9);border-radius:12px">' + starBtn(f) + '</span></div>';
         }).join('') + '</div>';
       } else {
         h += '<div class="muted small">Values per 100 g · protein · carbs · fat</div>';
         h += list.length ? '<section class="card clip">' + list.map(function (f) {
-          return '<button class="item" data-act="open-food" data-id="' + esc(f.id) + '">' + thumb(f) + '<span class="grow"><span class="nm">' + esc(f.name) + '</span><span class="sb">P ' + g1(f.p) + ' g · C ' + g1(f.c) + ' g · F ' + g1(f.f) + ' g</span></span><span style="font-size:15px;font-weight:700">' + k(f.kcal) + '</span></button>';
+          return '<div class="item" style="padding-right:4px">' + thumb(f) + '<button class="grow" data-act="open-food" data-id="' + esc(f.id) + '" style="border:none;background:transparent;text-align:left;padding:0;cursor:pointer;display:flex;align-items:center;gap:8px"><span class="grow"><span class="nm">' + esc(f.name) + '</span><span class="sb">P ' + g1(f.p) + ' g · C ' + g1(f.c) + ' g · F ' + g1(f.f) + ' g</span></span><span style="font-size:15px;font-weight:700">' + k(f.kcal) + '</span></button>' + starBtn(f) + '</div>';
         }).join('') + '</section>' : '<div class="empty">No foods found.</div>';
       }
     }
@@ -517,6 +542,8 @@
     var F = form.f, isUnit = F.basis === 'unit';
     var title = form.isNew ? 'New ' + F.type + ' food' : 'Edit food';
     var h = '<div class="screen">' + header(title, '#/foods' + qs({ tab: F.type })) +
+      '<label class="btn outline" style="position:relative">' + svg(I.scan, 20, 1.7) + (form.scanning ? 'Reading label…' : 'Scan nutrition label') + '<input type="file" accept="image/*" data-in="labelone" style="position:absolute;inset:0;opacity:0;cursor:pointer"' + (form.scanning ? ' disabled' : '') + '></label>' +
+      '<div class="muted small" style="text-align:center;margin-top:-6px">Reads the values per 100 g for you to check</div>' +
       (form.builtin ? '<div class="muted small" style="margin-top:-6px">Standard food. Your changes replace the reference values on this device.</div>' : '') +
       '<section class="row" style="gap:14px">' +
       '<span class="photo-edit' + (F.photo ? ' has' : '') + '">' + (F.photo ? '<img alt="Food photo" src="' + F.photo + '">' : svg(I.camera, 30, 1.5) + '<span style="font-size:13px">Photo</span>') + '</span>' +
@@ -682,6 +709,101 @@
   actions['pick-day'] = function (el) { var q = route().q; go('#/history' + qs({ v: 'month', d: q.d || today(), sel: el.dataset.v })); };
   actions['open-month'] = function (el) { go('#/history' + qs({ v: 'month', d: el.dataset.v })); };
 
+  // UNKNOWN / ESTIMATE
+  var est = null;
+  screens['/unknown'] = function (q) {
+    if (!est || est.key !== location.hash) {
+      var e = q.entry ? data.entries.filter(function (x) { return x.id === q.entry; })[0] : null;
+      est = { key: location.hash, entry: e, name: e ? e.name : '', kcal: e ? Math.round(e.kcal) : null, p: e && e.p ? g1(e.p) : null, c: e && e.c ? g1(e.c) : null, f: e && e.f ? g1(e.f) : null, meal: e ? e.meal : (q.m || defaultMeal()) };
+    }
+    function nr(id, label, key, u) { return '<div class="numrow"><label for="' + id + '">' + label + '</label><input id="' + id + '" data-est="' + key + '" inputmode="decimal" value="' + (est[key] == null ? '' : est[key]) + '" placeholder="' + (key === 'kcal' ? '0' : 'optional') + '"><span class="u">' + u + '</span></div>'; }
+    return '<div class="screen">' + header(est.entry ? 'Edit estimate' : 'Unknown / estimate', '#/log' + qs({ d: q.d })) +
+      '<div class="muted" style="font-size:14px;margin-top:-6px">For a restaurant meal or anything without values. Write your estimate, or paste the answer you got (e.g. from ChatGPT).</div>' +
+      '<div class="field"><label for="en">Name</label><input id="en" class="input" data-est="name" value="' + esc(est.name) + '" placeholder="e.g. Restaurant lunch"></div>' +
+      '<section class="card clip">' + nr('ek', 'Calories', 'kcal', 'kcal') + nr('ep', 'Protein', 'p', 'g') + nr('ec', 'Carbs', 'c', 'g') + nr('ef', 'Fat', 'f', 'g') + '</section>' +
+      '<button class="btn ghost" data-act="est-paste">Paste estimate</button>' +
+      '<div class="field"><label for="et">…or paste the text here</label><textarea id="et" class="input" data-in="esttext" placeholder="Total: ~800 kcal · Protein 35 g · Carbs 80 g · Fat 38 g"></textarea></div>' +
+      '<div class="field"><div class="lbl">Meal</div>' + mealPills(est.meal) + '</div>' +
+      (est.entry ? '<button class="btn danger" data-act="est-delete">Delete from log</button>' : '') +
+      '</div><div class="bottombar"><div><button class="btn" data-act="est-save">' + (est.entry ? 'Save changes' : 'Add to ' + MEAL_NAME[est.meal]) + '</button></div></div>';
+  };
+  function applyEstimate(txt) {
+    var r = C.parseEstimate(txt);
+    if (r.kcal == null) { toast('No calories found in that text'); return false; }
+    est.kcal = Math.round(r.kcal); ['p', 'c', 'f'].forEach(function (key) { if (r[key] != null) est[key] = Math.round(r[key]); });
+    rerender(); toast('Estimate filled in: ' + k(est.kcal) + ' kcal'); return true;
+  }
+  actions['est-paste'] = function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) { toast('Paste the text in the box below'); return; }
+    navigator.clipboard.readText().then(function (t) { if (t) applyEstimate(t); else toast('The clipboard is empty'); }).catch(function () { toast('Paste the text in the box below'); });
+  };
+  actions['est-save'] = function () {
+    var kc = num(est.kcal);
+    if (!(kc > 0)) { toast('Add the calories'); return; }
+    var q = route().q, d = est.entry ? est.entry.date : (q.d || today());
+    var e = est.entry || { id: uid(), date: d, foodId: 'unknown', amount: { mode: 'estimate' }, t: Date.now() };
+    e.name = (est.name || '').trim() || 'Unknown'; e.label = 'Estimate'; e.meal = est.meal;
+    e.kcal = kc; e.p = num(est.p) || 0; e.c = num(est.c) || 0; e.f = num(est.f) || 0;
+    if (!est.entry) data.entries.push(e);
+    save(); toast(est.entry ? 'Saved' : e.name + ' added to ' + MEAL_NAME[e.meal]); est = null; go('#/log' + qs({ d: d }));
+  };
+  actions['est-delete'] = function () {
+    var e = est.entry;
+    confirmBox('Delete ' + e.name + '?', 'Delete', function () { data.entries = data.entries.filter(function (x) { return x.id !== e.id; }); save(); est = null; go('#/log' + qs({ d: e.date })); });
+  };
+
+  // SCAN LABELS (bulk)
+  screens['/scan'] = function () {
+    if (!memo.scan) memo.scan = { drafts: [], busy: false, msg: '' };
+    var S = memo.scan;
+    var h = '<div class="screen">' + header('Scan labels', '#/foods?tab=custom') +
+      '<div class="muted" style="font-size:15px;line-height:1.4;margin-top:-6px">Choose one or more photos of nutrition labels (the table with values per 100 g). The app reads them on your iPhone; then add a name to each and check the numbers.</div>' +
+      '<label class="btn outline" style="position:relative">' + svg(I.camera, 20, 1.6) + (S.busy ? esc(S.msg || 'Reading…') : (S.drafts.length ? 'Add more photos' : 'Choose label photos')) +
+      '<input type="file" accept="image/*" multiple data-in="labels" style="position:absolute;inset:0;opacity:0;cursor:pointer"' + (S.busy ? ' disabled' : '') + '></label>';
+    S.drafts.forEach(function (d, i) {
+      function nf(key, label, u) { return '<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted);flex:1;min-width:0">' + label + '<span class="row" style="gap:3px"><input data-draft="' + i + '" data-key="' + key + '" inputmode="decimal" value="' + (d[key] == null ? '' : d[key]) + '" style="width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:7px 6px;font-size:16px;background:#fff' + (d[key] == null ? ';border-color:#B9B3A9;background:#FBF8F3' : '') + '"><span>' + u + '</span></span></label>'; }
+      h += '<section class="card" style="padding:12px;display:flex;flex-direction:column;gap:10px">' +
+        '<div class="row" style="align-items:flex-start"><img alt="Label photo" src="' + d.thumb + '" style="width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line);flex:none">' +
+        '<div class="grow" style="display:flex;flex-direction:column;gap:6px"><input class="input" style="min-height:44px;font-size:16px" data-draft="' + i + '" data-key="name" value="' + esc(d.name || '') + '" placeholder="Name (required)" aria-label="Food name">' +
+        '<div class="muted small">' + (d.found >= 4 ? (d.consistent === false ? 'Numbers don’t add up · check them' : 'All values found · per 100 g') : d.found ? 'Some values missing · check the label' : 'Could not read this label · fill in by hand') + '</div></div>' +
+        '<button class="xbtn" data-act="draft-remove" data-i="' + i + '" aria-label="Remove">' + svg(I.x, 18) + '</button></div>' +
+        '<div class="row" style="gap:8px">' + nf('kcal', 'Calories', 'kcal') + nf('p', 'Protein', 'g') + nf('c', 'Carbs', 'g') + nf('f', 'Fat', 'g') + '</div></section>';
+    });
+    h += '</div>';
+    if (S.drafts.length) h += '<div class="bottombar"><div><button class="btn" data-act="drafts-save"' + (S.busy ? ' disabled' : '') + '>Save ' + S.drafts.length + ' food' + (S.drafts.length > 1 ? 's' : '') + '</button></div></div>';
+    return h;
+  };
+  function loadOcr() {
+    if (window.FT_OCR) return Promise.resolve();
+    return new Promise(function (ok, fail) { var s = document.createElement('script'); s.src = 'js/ocr.js'; s.onload = ok; s.onerror = fail; document.head.appendChild(s); });
+  }
+  function scanFiles(files) {
+    var S = memo.scan; S.busy = true; var list = Array.prototype.slice.call(files), i = 0;
+    function progress(m) { if (/recogniz/.test(m.status)) S.msg = 'Reading label ' + (i + 1) + ' of ' + list.length + '… ' + Math.round((m.progress || 0) * 100) + '%'; else S.msg = 'Preparing the label reader…'; var b = document.querySelector('label.btn.outline'); if (b && b.firstChild) b.childNodes[1].nodeValue = S.msg; }
+    S.msg = 'Preparing the label reader…'; if (current === '/scan') rerender();
+    function next() {
+      if (i >= list.length) { S.busy = false; S.msg = ''; if (current === '/scan') rerender(); return; }
+      window.FT_OCR.readLabel(list[i], progress).then(function (v) {
+        S.drafts.push({ name: '', kcal: v.kcal, p: v.p, c: v.c, f: v.f, found: v.found, consistent: v.consistent, thumb: v.thumb });
+      }).catch(function (e) { toast(e.message || 'Could not read a photo'); })
+        .then(function () { i++; if (current === '/scan') rerender(); next(); });
+    }
+    loadOcr().then(next).catch(function () { S.busy = false; toast('Could not load the label reader. Check your connection.'); rerender(); });
+  }
+  actions['draft-remove'] = function (el) { memo.scan.drafts.splice(+el.dataset.i, 1); rerender(); };
+  actions['drafts-save'] = function () {
+    var D = memo.scan.drafts;
+    for (var i = 0; i < D.length; i++) {
+      if (!(D[i].name || '').trim()) { toast('Add a name to every food'); var inp = document.querySelector('[data-draft="' + i + '"][data-key="name"]'); if (inp) inp.focus(); return; }
+      if (D[i].kcal == null) { toast('Add the calories of “' + D[i].name + '”'); return; }
+    }
+    D.forEach(function (d) {
+      var id = 'cus-' + uid();
+      data.foods[id] = { id: id, type: 'custom', name: d.name.trim(), basis: '100g', kcal: d.kcal, p: d.p || 0, c: d.c || 0, f: d.f || 0, portions: [], photo: null, builtin: false };
+    });
+    save(); toast(D.length + ' food' + (D.length > 1 ? 's' : '') + ' saved'); memo.scan = null; go('#/foods?tab=custom');
+  };
+
   // SETTINGS
   screens['/settings'] = function () {
     var G = data.goals;
@@ -731,6 +853,9 @@
     else if (t.dataset.in === 'quick') { memo.quick.text = t.value; memo.quick.removed = {}; clearTimeout(renderQuickResults._t); renderQuickResults._t = setTimeout(renderQuickResults, 200); }
     else if (t.dataset.in === 'grams') { amt.a.grams = num(t.value) || 0; updateAmountOutputs(); }
     else if (t.dataset.in === 'mealname') { memo.mealDraft.name = t.value; }
+    else if (t.dataset.est && est) { est[t.dataset.est] = t.value; }
+    else if (t.dataset.in === 'esttext') { clearTimeout(applyEstimate._t); var v = t.value; applyEstimate._t = setTimeout(function () { if (C.parseEstimate(v).kcal != null) applyEstimate(v); }, 700); }
+    else if (t.dataset.draft != null && memo.scan) { var dr = memo.scan.drafts[+t.dataset.draft]; if (dr) dr[t.dataset.key] = t.dataset.key === 'name' ? t.value : num(t.value); }
     else if (t.dataset.f && form) {
       var key = t.dataset.f, v = t.value;
       form.f[key] = (key === 'name' || key === 'unitName') ? v : num(v);
@@ -740,6 +865,16 @@
     var t = e.target;
     if (t.dataset.in === 'jump' && t.value) go('#/log' + qs({ d: t.value }));
     else if (t.dataset.in === 'photo' && t.files && t.files[0]) processPhoto(t.files[0]);
+    else if (t.dataset.in === 'labels' && t.files && t.files.length) { scanFiles(t.files); t.value = ''; }
+    else if (t.dataset.in === 'labelone' && t.files && t.files[0]) {
+      var file = t.files[0]; form.scanning = true; rerender();
+      loadOcr().then(function () { return window.FT_OCR.readLabel(file); }).then(function (v) {
+        form.scanning = false;
+        if (!v.found) { toast('Could not read the label. Try a sharper, straight photo.'); rerender(); return; }
+        form.f.basis = '100g'; ['kcal', 'p', 'c', 'f'].forEach(function (key) { if (v[key] != null) form.f[key] = v[key]; });
+        rerender(); toast(v.found >= 4 ? 'Values read from the label: check them' : 'Some values found: check and complete');
+      }).catch(function () { form.scanning = false; rerender(); toast('Could not load the label reader. Check your connection.'); });
+    }
     else if (t.dataset.in === 'restore' && t.files && t.files[0]) { restoreFile(t.files[0]); t.value = ''; }
     else if (t.dataset.actChange === 'fav-form') form.fav = t.checked;
     else if (t.dataset.goal) { var v = num(t.value); if (v != null && v >= 0) { data.goals[t.dataset.goal] = Math.round(v); save(); toast('Goal saved'); } }
@@ -750,6 +885,7 @@
     var r = route(), fn = screens[r.path];
     if (!fn) { go('#/log'); return; }
     if (r.path !== '/amount') amt = null;
+    if (r.path !== '/unknown') est = null;
     if (r.path !== '/food/new' && r.path !== '/food/edit') form = null;
     if (r.path !== '/foods' && current === '/foods') memo.foodsTerm = '';
     current = r.path;
