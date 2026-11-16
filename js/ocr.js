@@ -37,7 +37,7 @@
   }
   // grayscale + adaptive black & white (Bradley), optionally rotated: copes with coloured packs and shadows
   function prepare(img, rot) {
-    var long = Math.max(img.width, img.height), sc = long < 1600 ? 1600 / long : Math.min(1, 2400 / long);
+    var long = Math.max(img.width, img.height), sc = long < 1600 ? 1600 / long : Math.min(1, 3200 / long);
     var w0 = Math.round(img.width * sc), h0 = Math.round(img.height * sc);
     var side = rot % 180 !== 0, w = side ? h0 : w0, h = side ? w0 : h0;
     var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
@@ -61,10 +61,10 @@
     return cv;
   }
   function thumbOf(img) {
-    var tc = document.createElement('canvas'), ts = 480 / Math.max(img.width, img.height);
+    var tc = document.createElement('canvas'), ts = Math.min(1, 1400 / Math.max(img.width, img.height));
     tc.width = Math.round(img.width * ts); tc.height = Math.round(img.height * ts);
     tc.getContext('2d').drawImage(img, 0, 0, tc.width, tc.height);
-    return tc.toDataURL('image/jpeg', 0.75);
+    return tc.toDataURL('image/jpeg', 0.85);
   }
   function score(v) { return v.found * 10 + (v.consistent ? 5 : 0); }
   // rebuild the visual rows of the table from word positions (label on the left, numbers on the right)
