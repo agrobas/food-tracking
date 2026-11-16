@@ -355,9 +355,33 @@
     if (res.found === 4 && res.kcal) { var est = 4 * res.p + 4 * res.c + 9 * res.f; res.consistent = Math.abs(est - res.kcal) <= Math.max(25, res.kcal * 0.25); }
     return res;
   }
-  // several labels pasted at once (e.g. from the Shortcut), separated by a line of ===== or ---
+  // several labels pasted at once (e.g. from the Shortcut). Uses ===== if present; otherwise starts a new
+  // label at each nutrition-table heading, or when a new energy line appears after a protein line.
+  var HEAD = /(nutrition facts|nutrition information|nutritional (breakdown|information|values|facts)|typical (nutrition|values)|informacion nutricional|informacion nutrimental|valores? nutricional|valor nutricional|valeurs nutritionnelles|nahrwert|حقائق غذائية)/;
   function splitLabels(text) {
-    return String(text || '').split(/\s*={3,}\s*|\n\s*(?:-{5,}|#{3,})\s*\n/).map(function (t) { return t.trim(); }).filter(Boolean);
+    var raw = String(text || '');
+    var parts = raw.split(/\s*={3,}\s*|\n\s*(?:-{5,}|#{3,})\s*\n/).map(function (x) { return x.trim(); }).filter(Boolean);
+    var out = [];
+    parts.forEach(function (part) {
+      var lines = part.split(/\n/), cur = [], seenHead = false, seenProt = false, chunks = [];
+      lines.forEach(function (l) {
+        var n = l.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        var isHead = HEAD.test(n);
+        var isEnergy = /(energ|calori|kcal|valor energ)/.test(n) && /\d/.test(n);
+        if ((isHead && seenHead) || (isEnergy && seenProt && !isHead)) {
+          chunks.push(cur); cur = []; seenProt = false; seenHead = false;
+        }
+        if (isHead) seenHead = true;
+        if (/protein|proteina/.test(n) && /\d/.test(n)) seenProt = true;
+        cur.push(l);
+      });
+      chunks.push(cur);
+      chunks.forEach(function (c) { var s2 = c.join('\n').trim(); if (s2) out.push(s2); });
+    });
+    // drop pieces with no nutrition values (e.g. marketing text): merge them into the next piece
+    var res = [];
+    out.forEach(function (p) { var v = parseLabel(p); if (v.found >= 2) res.push(p); else if (res.length === 0 && out.length > 1) {} });
+    return res.length ? res : out;
   }
   // "~800 kcal", "Calories: 750–850", a ChatGPT answer with a Total line...
   function parseEstimate(text) {

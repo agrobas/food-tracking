@@ -1,5 +1,5 @@
 /* Food tracking service worker: works offline, picks up new versions when online. */
-var CACHE = 'ft-v1.4.0';
+var CACHE = 'ft-v1.4.1';
 var FILES = ['./', 'index.html', 'css/app.css', 'js/foods.js', 'js/core.js', 'js/app.js', 'js/ocr.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));

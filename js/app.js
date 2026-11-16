@@ -4,7 +4,7 @@
   var C = window.FT_CORE;
   var BUILTIN = window.FT_FOODS;
   var KEY = 'ft-data-v1';
-  var VERSION = '1.4.0';
+  var VERSION = '1.4.1';
 
   var MEALS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['snack', 'Afternoon snack'], ['dinner', 'Dinner'], ['extra', 'Extra']];
   var MEAL_NAME = {}; MEALS.forEach(function (m) { MEAL_NAME[m[0]] = m[1]; });
