@@ -4,7 +4,7 @@
   var C = window.FT_CORE;
   var BUILTIN = window.FT_FOODS;
   var KEY = 'ft-data-v1';
-  var VERSION = '1.5.0';
+  var VERSION = '1.6.0';
 
   var MEALS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['snack', 'Afternoon snack'], ['dinner', 'Dinner'], ['extra', 'Extra']];
   var MEAL_NAME = {}; MEALS.forEach(function (m) { MEAL_NAME[m[0]] = m[1]; });
@@ -183,6 +183,9 @@
       '<div style="text-align:right"><div class="muted" style="font-size:14px">Goal ' + k(G.kcal) + ' kcal</div><div style="font-size:18px;font-weight:700">' + (left >= 0 ? k(left) + ' left' : k(-left) + ' over') + '</div></div></div>' +
       '<div class="bar big' + (left < 0 ? ' over' : '') + '"><div style="width:' + pct + '%"></div></div>' +
       '<div class="macros">' + mac('Protein', tot.p, G.p) + mac('Carbs', tot.c, G.c) + mac('Fat', tot.f, G.f) + '</div></section>' +
+      ((data.siri && data.siri.inbox && data.siri.inbox.length) ? data.siri.inbox.map(function (it) {
+        return '<section class="card unrec"><div style="font-size:15px"><b>From Siri, to check:</b> “' + esc(it.text) + '” <span class="muted">· ' + esc(MEAL_NAME[it.meal]) + (it.date !== d ? ', ' + esc(it.date) : '') + '</span></div><div class="row" style="gap:8px"><button class="btn ghost" data-act="siri-check" data-id="' + esc(it.id) + '">Review</button><button class="btn ghost" data-act="siri-dismiss" data-id="' + esc(it.id) + '">Dismiss</button></div></section>';
+      }).join('') : '') +
       '<a href="#/quick' + qs({ d: d }) + '" class="card" style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 16px;min-height:52px"><span class="muted grow" style="font-size:16px">Type or dictate what you ate…</span><span aria-hidden="true" style="width:40px;height:40px;border-radius:12px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center">' + svg(I.mic, 20) + '</span></a>';
     MEALS.forEach(function (m) {
       var es = list.filter(function (e) { return e.meal === m[0]; }), mt = totals(es);
@@ -896,11 +899,86 @@
   };
 
   // SETTINGS
+  // ---------- SIRI (outside the app) ----------
+  // A shortcut ("Apunta comida") sends what you dictate to a private relay topic on ntfy.sh;
+  // the app collects it when opened and logs it with the date and meal of when you said it.
+  var RELAY = 'https://ntfy.sh/';
+  function siriTopic() {
+    if (!data.siri) {
+      var a = new Uint8Array(12); (window.crypto || window.msCrypto).getRandomValues(a);
+      data.siri = { topic: 'ft-' + Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''), seen: [], since: Math.floor(Date.now() / 1000) - 3600, inbox: [] };
+      save();
+    }
+    return data.siri.topic;
+  }
+  function mealAt(d) { var h = d.getHours(); return h < 11 ? 'breakfast' : h < 16 ? 'lunch' : h < 19 ? 'snack' : 'dinner'; }
+  var siriBusy = false;
+  function collectSiri() {
+    if (!data.siri || !data.siri.enabled || siriBusy || !navigator.onLine) return;
+    siriBusy = true;
+    var S = data.siri;
+    fetch(RELAY + S.topic + '/json?poll=1&since=' + Math.max(0, (S.since || 0) - 5)).then(function (r) { return r.ok ? r.text() : ''; }).then(function (txt) {
+      var added = 0, toCheck = 0, foods = allFoods();
+      (txt || '').split('\n').forEach(function (line) {
+        if (!line.trim()) return;
+        var m; try { m = JSON.parse(line); } catch (e) { return; }
+        if (m.event !== 'message' || !m.message || S.seen.indexOf(m.id) >= 0) return;
+        S.seen.push(m.id); if (S.seen.length > 200) S.seen = S.seen.slice(-200);
+        S.since = Math.max(S.since || 0, m.time || 0);
+        var when = new Date((m.time || Date.now() / 1000) * 1000), d = ds(when), meal = mealAt(when);
+        var said = String(m.message).trim(), mm = said.match(/^(desayuno|comida|almuerzo|merienda|cena|extra|breakfast|lunch|snack|dinner)\s*[:,]?\s*/i);
+        if (mm) { meal = { desayuno: 'breakfast', breakfast: 'breakfast', comida: 'lunch', almuerzo: 'lunch', lunch: 'lunch', merienda: 'snack', snack: 'snack', cena: 'dinner', dinner: 'dinner', extra: 'extra' }[mm[1].toLowerCase()]; said = said.slice(mm[0].length); }
+        var left = [];
+        C.parse(said, foods).forEach(function (r) {
+          if (r.estimate) { data.entries.push({ id: uid(), date: d, meal: meal, foodId: 'unknown', name: r.estimate.name, amount: { mode: 'estimate' }, label: 'Estimate · Siri', kcal: r.estimate.kcal, p: 0, c: 0, f: 0, t: when.getTime() }); added++; }
+          else if (r.food && !r.unsure) { var e = makeEntry(r.food, r.amount, d, meal); e.t = when.getTime(); data.entries.push(e); added++; }
+          else left.push(r.text);
+        });
+        if (left.length) { S.inbox.push({ id: m.id, text: left.join(', '), date: d, meal: meal }); toCheck += left.length; }
+      });
+      if (added || toCheck) { save(); toast('Siri: ' + (added ? added + ' added' : '') + (added && toCheck ? ' · ' : '') + (toCheck ? toCheck + ' to check' : '')); if (current === '/log' || current === '/settings') rerender(); }
+      else save();
+    }).catch(function () {}).then(function () { siriBusy = false; });
+  }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') collectSiri(); });
+  actions['siri-check'] = function (el) {
+    var S = data.siri, it = S.inbox.filter(function (x) { return x.id === el.dataset.id; })[0]; if (!it) return;
+    S.inbox = S.inbox.filter(function (x) { return x.id !== it.id; }); save();
+    memo.quick = { text: it.text, removed: {}, extra: [], meal: it.meal };
+    go('#/quick' + qs({ d: it.date }));
+  };
+  actions['siri-dismiss'] = function (el) { data.siri.inbox = data.siri.inbox.filter(function (x) { return x.id !== el.dataset.id; }); save(); rerender(); };
+  actions['siri-toggle'] = function () {
+    siriTopic(); data.siri.enabled = !data.siri.enabled; if (data.siri.enabled) data.siri.since = Math.floor(Date.now() / 1000) - 3600;
+    save(); rerender(); if (data.siri.enabled) collectSiri();
+  };
+  actions['siri-copy'] = function () {
+    var url = RELAY + siriTopic();
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(function () { toast('Link copied'); }).catch(function () {});
+  };
+  actions['siri-help'] = function () {
+    var url = RELAY + siriTopic();
+    modal('<h2>Log with Siri</h2><div style="font-size:15px;line-height:1.45;max-height:62vh;overflow:auto">' +
+      '<p style="margin:0 0 8px">Create it once in <b>Shortcuts</b> → <b>+</b>, name it <b>Apunta comida</b> (that is what you will say to Siri) and add:</p><ol style="margin:0;padding-left:20px">' +
+      '<li><b>Dictate Text</b> (Dictar texto), language Spanish.</li>' +
+      '<li><b>Get Contents of URL</b> (Obtener contenido de URL) with your link below. Tap the arrow: Method <b>POST</b>, Request Body <b>File</b> (Archivo) → <i>Dictated Text</i>.</li>' +
+      '<li>Optional: <b>Show Result</b> (Mostrar resultado) with “Apuntado: <i>Dictated Text</i>”, so Siri confirms.</li></ol>' +
+      '<p style="margin:8px 0 6px">Your private link (keep it to yourself):</p><div class="card" style="padding:10px;font-size:13px;word-break:break-all;user-select:all">' + esc(url) + '</div>' +
+      '<p style="margin:8px 0 0">Say: “Oye Siri, apunta comida” → “medio aguacate y mi yogur”. Start with “cena”, “comida”… to choose the meal; otherwise it uses the time you said it. The food appears when you open the app (within 12 hours).</p></div>' +
+      '<button class="btn" data-act="siri-copy">Copy link</button><button class="btn ghost" data-close-btn>Close</button>', function (el) {
+      el.querySelector('[data-act="siri-copy"]').onclick = function () { actions['siri-copy'](); };
+    });
+  };
+
   screens['/settings'] = function () {
     var G = data.goals;
     function gr(id, label, key, u) { return '<div class="numrow"><label for="' + id + '">' + label + '</label><input id="' + id + '" data-goal="' + key + '" inputmode="numeric" value="' + G[key] + '"><span class="u">' + u + '</span></div>'; }
     return '<div class="screen tabbed"><h1>Settings</h1>' +
       '<h2 class="sec">Daily goals</h2><section class="card clip">' + gr('gk', 'Calories', 'kcal', 'kcal') + gr('gp', 'Protein', 'p', 'g') + gr('gc', 'Carbs', 'c', 'g') + gr('gf', 'Fat', 'f', 'g') + '</section>' +
+      '<h2 class="sec">Siri</h2><section class="card clip">' +
+      '<button class="setrow" data-act="siri-toggle" role="switch" aria-checked="' + !!(data.siri && data.siri.enabled) + '"><span class="grow">Log with Siri (from outside the app)</span><span class="pill' + (data.siri && data.siri.enabled ? ' on' : '') + '" style="min-height:30px;display:inline-flex;align-items:center">' + (data.siri && data.siri.enabled ? 'On' : 'Off') + '</span></button>' +
+      (data.siri && data.siri.enabled ? '<button class="setrow" data-act="siri-help"><span class="grow">Set up the “Apunta comida” shortcut</span>' + svg(I.right, 18) + '</button>' : '') + '</section>' +
+      (data.siri && data.siri.enabled ? '<div class="muted small" style="line-height:1.4;margin-top:-6px">What you dictate goes through ntfy.sh (a free relay) on a private link only your iPhone knows, and is kept there up to 12 hours until the app picks it up.</div>' : '') +
       '<h2 class="sec">Data</h2><section class="card clip">' +
       '<button class="setrow" data-act="export">' + svg(I.down, 20, 1.7) + '<span class="grow">Export to Excel</span>' + svg(I.right, 18) + '</button>' +
       '<button class="setrow" data-act="backup">' + svg(I.cloud, 20, 1.7) + '<span class="grow">Back up (save to Files / iCloud Drive)</span><span class="muted small">' + (data.lastBackup ? esc(data.lastBackup) : '') + '</span></button>' +
@@ -1038,6 +1116,7 @@
 
   load();
   render();
+  collectSiri();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function () {});
   window.FT_APP = { data: function () { return data; }, reset: function () { data = blank(); save(); render(); } };

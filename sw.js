@@ -1,6 +1,6 @@
 /* Food tracking service worker: works offline, picks up new versions when online.
    The label reader (vendor/) lives in its own cache so app updates don't download it again. */
-var CACHE = 'ft-v1.5.0';
+var CACHE = 'ft-v1.6.0';
 var VENDOR = 'ft-vendor-v1';
 var FILES = ['./', 'index.html', 'css/app.css', 'js/foods.js', 'js/core.js', 'js/app.js', 'js/ocr.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', function (e) {

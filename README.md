@@ -8,6 +8,7 @@ Personal calorie and macro tracker for iPhone. It is a web app you add to the Ho
 - **Unknown / estimate**: log a restaurant meal as ~800 kcal, or paste an answer (e.g. from ChatGPT) and the calories and macros are filled in. In Quick entry, “restaurante 800 kcal” works too.
 - **Scan labels**: in Foods → Scan labels, choose one or many photos of nutrition tables; the app reads them on the phone with PaddleOCR (open source, offline after a ~40 MB first download). It handles per 100 g / 100 ml and US "per serving" labels. You can also paste an answer from ChatGPT (the app gives you the prompt). Review, name and save them one by one or all together.
 - **Favorites**: tap the star next to any food.
+- **Log with Siri** (Settings → Siri): an “Apunta comida” shortcut sends what you dictate to a private ntfy.sh topic; the app picks it up when opened and logs it with the time and meal you said it. Anything unclear waits on the Log screen to review.
 - **My meals** with their own photo.
 - **Export to Excel** (Settings): daily totals and every food logged, for this month, last month, this year or everything.
 - **History**: week, month and year.
