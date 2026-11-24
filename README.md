@@ -22,3 +22,13 @@ Standard values are approximate reference values from public nutrition tables.
 ## Develop
 Plain HTML/CSS/JS, no build step. `node tests/parser.test.js` runs the quick-entry examples.
 When you change files, bump `CACHE` in `sw.js` so phones pick up the new version.
+
+## Expenses (in `expenses/`)
+A second app in this repo: personal expense tracker in QAR. Open https://agrobas.github.io/food-tracking/expenses/ with the setup link (it carries your private key), then Share → **Add to Home Screen**.
+
+- **Period**: pending payments from Apple Pay (change amount, category, split; the last part is calculated for you), **Add extra** for rent, transfers or cash, total and total by category for the month. Work is shown apart and left out of the personal total.
+- **Month**: calendar with the daily spend; tap a day to see its expenses.
+- **Year**: January–December totals and the year by category.
+- **Apple Pay**: a Shortcuts automation (Transaction trigger) sends each payment with your location and asks for the category; steps in Settings.
+
+Data lives in a free Supabase project, reachable only through functions that check the private key (the key is not in this repo). Bump `CACHE` in `expenses/sw.js` when you change files.
