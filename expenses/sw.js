@@ -1,5 +1,5 @@
 /* Expenses service worker: the app opens offline; data always comes from the network (last copy kept by the app). */
-var CACHE = 'exp-v1.0.0';
+var CACHE = 'exp-v1.1.0';
 var FILES = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));

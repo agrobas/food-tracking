@@ -4,7 +4,7 @@
 
   var SB = 'https://cxwgpmnmohlvnzumvneo.supabase.co';
   var KEY = 'sb_publishable_pTFm52fuqLOYSC3QbRs5dQ_fZyNZWPj';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
   var CATS = ['Food out', 'Supermarket', 'Coffee', 'Drinks', 'Tobacco', 'Shopping', 'Beauty', 'Workout', 'Health', 'Car', 'Rent', 'Internet', 'Work', 'Other'];
   var CURS = ['QAR', 'AED', 'USD', 'EUR', 'SAR', 'GBP', 'BHD', 'OMR', 'KWD'];
   var RATES = { QAR: 1, AED: 0.99115, USD: 3.64, SAR: 0.970667, BHD: 9.68, OMR: 9.4545, KWD: 11.85, EUR: 4.2, GBP: 4.9 };
@@ -93,10 +93,23 @@
   }
   function fail(e) { toast(e && e.status === undefined ? 'No connection. Try again.' : (e && e.message === 'not allowed' ? 'Key not valid. Check Settings.' : 'Something went wrong: ' + (e && e.message))); }
 
-  // look up what is at the payment's location (OpenStreetMap), store it once
+  // look up what is at the payment's location (OpenStreetMap): the shop's name and, if no category was guessed, a proposal from the kind of place
   var looked = {};
+  var KIND = [
+    [/^(restaurant|fast_food|food_court|ice_cream|biergarten)$/, 'Food out'], [/^(cafe|coffee)$/, 'Coffee'], [/^(bar|pub|nightclub|alcohol|wine|beverages)$/, 'Drinks'],
+    [/^(supermarket|convenience|greengrocer|butcher|bakery|deli|grocery|general|kiosk|seafood|dairy)$/, 'Supermarket'], [/^(tobacco|e-cigarette)$/, 'Tobacco'],
+    [/^(pharmacy|chemist|clinic|hospital|doctors|dentist|optician|medical_supply)$/, 'Health'], [/^(hairdresser|beauty|cosmetics|perfumery|massage|nail_salon)$/, 'Beauty'],
+    [/^(fitness_centre|sports_centre|sports|gym|swimming_pool|pitch)$/, 'Workout'], [/^(fuel|parking|car_wash|car_repair|car|tyres|car_parts|taxi|charging_station)$/, 'Car'],
+    [/^(mobile_phone|telecommunication)$/, 'Internet'],
+    [/^(mall|department_store|clothes|shoes|electronics|jewelry|furniture|gift|toys|books|bag|boutique|houseware|doityourself|hardware|variety_store|sports_goods)$/, 'Shopping']
+  ];
+  function kindHint(j) {
+    var a = j.address || {}, t = [j.type, a.shop, a.amenity, a.leisure].filter(Boolean);
+    for (var i = 0; i < t.length; i++) for (var k = 0; k < KIND.length; k++) if (KIND[k][0].test(t[i])) return KIND[k][1];
+    return null;
+  }
   function lookupPlaces(list) {
-    list.filter(function (e) { return e.lat != null && e.lng != null && !e.place && !looked[e.id]; }).slice(0, 3).forEach(function (e, i) {
+    list.filter(function (e) { return e.lat != null && e.lng != null && (!e.place || !e.category) && !looked[e.id]; }).slice(0, 3).forEach(function (e, i) {
       looked[e.id] = 1;
       setTimeout(function () {
         fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=en&lat=' + e.lat + '&lon=' + e.lng)
@@ -104,8 +117,10 @@
             var a = j.address || {};
             var name = j.name || a.shop || a.amenity || a.building || '';
             var addr = [a.road, a.neighbourhood || a.suburb || a.quarter, a.city || a.town || a.state].filter(Boolean).join(', ');
-            if (!name && !addr) return;
-            return rpc('set_place', { p_id: e.id, p_place: name || null, p_address: e.address ? null : addr }).then(function () { refresh(); });
+            var hint = e.category ? null : kindHint(j);
+            if (!name && !addr && !hint) return;
+            return rpc('set_place_hint', { p_id: e.id, p_place: e.place ? null : (name || null), p_address: e.address ? null : addr, p_hint: hint })
+              .then(function () { refresh(); });
           }).catch(function () { });
       }, i * 1100);
     });
@@ -169,8 +184,8 @@
     else h += '<div class="card clip">' + pend.map(function (e) {
       var where = [e.place && e.place !== e.merchant ? e.place : '', e.address].filter(Boolean).join(' · ');
       return '<div class="pend"><div><div class="nm">' + esc(e.merchant || 'Payment') + '</div><div class="sb">' + esc([shortDate(e.date) + (e.source === 'applepay' ? ', ' + timeOf(e.at) : ''), where].filter(Boolean).join(' · ')) + '</div></div>' +
-        '<div class="chips"><button class="chip" data-act="edit" data-id="' + e.id + '">' + money(e) + '</button>' +
-        '<button class="chip' + (e.category ? ' guess' : ' none') + '" data-act="pick" data-id="' + e.id + '">' + esc(e.category || 'Category') + svg(I.down, 14) + '</button>' +
+        '<div class="chips"><button class="chip amt" data-act="edit" data-id="' + e.id + '"><b>' + money(e) + '</b>' + (e.currency !== 'QAR' ? '<small>' + fmt(e.qar) + ' QAR</small>' : '') + '</button>' +
+        '<button class="chip' + (e.category ? ' guess' : ' none') + '" data-act="pick" data-id="' + e.id + '">' + (e.category ? '<span class="cl"><small>Suggested</small>' + esc(e.category) + '</span>' : 'Choose category') + svg(I.down, 14) + '</button>' +
         '<button class="okbtn" data-act="confirm" data-id="' + e.id + '" aria-label="Confirm"' + (e.category ? '' : ' disabled') + '>' + svg(I.check, 20) + '</button></div></div>';
     }).join('') + '</div>';
     h += '<button class="dashed" data-act="add">' + svg(I.plus, 20) + 'Add extra</button>';

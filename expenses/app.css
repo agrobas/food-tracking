@@ -216,3 +216,7 @@ textarea.input{padding:12px 16px;min-height:90px;resize:none;line-height:1.35}
 .copyrow:first-child{border-top:none}
 .copyrow .v{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted);word-break:break-all}
 .offline{font-size:13px;color:var(--muted);text-align:center}
+.chip.amt,.chip.guess{flex-direction:column;align-items:flex-start;justify-content:center;gap:0;line-height:1.15;padding:4px 12px;min-height:44px}
+.chip.guess{flex-direction:row;align-items:center;gap:8px}
+.chip .cl{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15}
+.chip small{font-size:11px;color:var(--muted);font-weight:400}
