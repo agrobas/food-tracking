@@ -220,3 +220,43 @@ textarea.input{padding:12px 16px;min-height:90px;resize:none;line-height:1.35}
 .chip.guess{flex-direction:row;align-items:center;gap:8px}
 .chip .cl{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15}
 .chip small{font-size:11px;color:var(--muted);font-weight:400}
+
+/* ===== Theme: pink & grey (1.2) ===== */
+:root{--bg:#F5F3F4;--card:#FFFFFF;--line:#E7E2E5;--line2:#EFE9EC;--soft:#F1ECEF;--chip:#ECE6E9;--ink:#2E2A2D;--ink2:#5B5559;--muted:#6B6569;--border:#DCD5D9;--bar:#E07AA0;--barbg:#EFE7EB;
+  --acc:#C7386C;--accSoft:#FBE3EC;--accDeep:#A52A58;--dash:#D08AA4;--onDark:#D9D2D6}
+.card{border-radius:18px}
+.monthbar{border-radius:16px}
+.btn{background:var(--acc)}
+.btn.ghost,.btn.outline,.btn.danger{background:#fff}
+.pill.on{background:var(--acc);border-color:var(--acc)}
+.count{background:var(--acc)}
+.dashed{border:1.5px dashed var(--dash);color:var(--acc)}
+.linkbtn{color:var(--acc)}
+.chip.amt{background:var(--soft);border-color:var(--line);min-height:46px;border-radius:12px}
+.chip.guess{border:1.5px dashed var(--dash);background:var(--accSoft);min-height:46px;border-radius:12px}
+.chip.none{min-height:46px;border-radius:12px}
+.chip .cl small{color:var(--accDeep);font-weight:700}
+.okbtn{width:46px;min-width:46px;height:46px;border-radius:23px;background:var(--acc);padding:0}
+.okbtn:disabled{background:var(--line);opacity:1}
+.totcard{background:var(--ink);color:#fff;border-color:var(--ink);border-radius:20px}
+.totcard .muted,.big .cur{color:var(--onDark)}
+.big{font-size:38px}
+.stats3 .stat:first-child{background:var(--ink);border-color:var(--ink);color:#fff}
+.stats3 .stat:first-child .muted{color:var(--onDark)}
+.cal .cell{border-radius:12px}
+.cal .cell.has{background:var(--accSoft)}
+.cal .cell.l2{background:#F6C4D6}
+.cal .cell.l3{background:#EE98B7}
+.cal .cell .k{color:var(--ink)}
+.cal .cell.today{background:var(--acc);color:#fff;box-shadow:none}
+.cal .cell.today .k,.cal .cell.today .d{color:#fff}
+.cal .cell.sel{background:var(--ink);color:#fff}
+.cal .cell.sel .k{color:#fff}
+.cal .cell .p{background:var(--acc)}
+.cal .cell.today .p{background:#fff}
+.tabs a.on{color:var(--acc)}
+.mcard{border-radius:16px}
+.mcard.cur{border-color:var(--acc);box-shadow:inset 0 0 0 1px var(--acc)}
+.tag.p{background:var(--accSoft);color:var(--accDeep)}
+.catrow.work{background:var(--soft)}
+#toast{background:var(--ink)}

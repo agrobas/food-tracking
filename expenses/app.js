@@ -4,7 +4,7 @@
 
   var SB = 'https://cxwgpmnmohlvnzumvneo.supabase.co';
   var KEY = 'sb_publishable_pTFm52fuqLOYSC3QbRs5dQ_fZyNZWPj';
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
   var CATS = ['Food out', 'Supermarket', 'Coffee', 'Drinks', 'Tobacco', 'Shopping', 'Beauty', 'Workout', 'Health', 'Car', 'Rent', 'Internet', 'Work', 'Other'];
   var CURS = ['QAR', 'AED', 'USD', 'EUR', 'SAR', 'GBP', 'BHD', 'OMR', 'KWD'];
   var RATES = { QAR: 1, AED: 0.99115, USD: 3.64, SAR: 0.970667, BHD: 9.68, OMR: 9.4545, KWD: 11.85, EUR: 4.2, GBP: 4.9 };
@@ -216,7 +216,7 @@
     var td = today();
     for (var d = 1; d <= nd; d++) {
       var ds = iso(new Date(state.y, state.m, d)), v = days[ds] || 0;
-      h += '<button class="cell' + (v ? ' has' : ' zero') + (ds === td ? ' today' : '') + (ds === state.selDay ? ' sel' : '') + '" data-act="day" data-d="' + ds + '"><span class="d">' + d + '</span>' +
+      h += '<button class="cell' + (v ? ' has ' + (v >= 300 ? 'l3' : v >= 100 ? 'l2' : 'l1') : ' zero') + (ds === td ? ' today' : '') + (ds === state.selDay ? ' sel' : '') + '" data-act="day" data-d="' + ds + '"><span class="d">' + d + '</span>' +
         (v ? '<span class="k">' + compact(v) + '</span>' : '') + (pendDays[ds] ? '<span class="p"></span>' : '') + '</button>';
     }
     h += '</div></div>';
