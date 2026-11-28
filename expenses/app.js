@@ -4,8 +4,8 @@
 
   var SB = 'https://cxwgpmnmohlvnzumvneo.supabase.co';
   var KEY = 'sb_publishable_pTFm52fuqLOYSC3QbRs5dQ_fZyNZWPj';
-  var VERSION = '1.2.0';
-  var CATS = ['Food out', 'Supermarket', 'Coffee', 'Drinks', 'Tobacco', 'Shopping', 'Beauty', 'Workout', 'Health', 'Car', 'Rent', 'Internet', 'Work', 'Other'];
+  var VERSION = '1.3.0';
+  var CATS = ['Food out', 'Supermarket', 'Coffee', 'Drinks', 'Tobacco', 'Shopping', 'Beauty', 'Workout', 'Health', 'Car', 'Rent', 'Internet', 'Laundry', 'Work', 'Other'];
   var CURS = ['QAR', 'AED', 'USD', 'EUR', 'SAR', 'GBP', 'BHD', 'OMR', 'KWD'];
   var RATES = { QAR: 1, AED: 0.99115, USD: 3.64, SAR: 0.970667, BHD: 9.68, OMR: 9.4545, KWD: 11.85, EUR: 4.2, GBP: 4.9 };
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -100,7 +100,7 @@
     [/^(supermarket|convenience|greengrocer|butcher|bakery|deli|grocery|general|kiosk|seafood|dairy)$/, 'Supermarket'], [/^(tobacco|e-cigarette)$/, 'Tobacco'],
     [/^(pharmacy|chemist|clinic|hospital|doctors|dentist|optician|medical_supply)$/, 'Health'], [/^(hairdresser|beauty|cosmetics|perfumery|massage|nail_salon)$/, 'Beauty'],
     [/^(fitness_centre|sports_centre|sports|gym|swimming_pool|pitch)$/, 'Workout'], [/^(fuel|parking|car_wash|car_repair|car|tyres|car_parts|taxi|charging_station)$/, 'Car'],
-    [/^(mobile_phone|telecommunication)$/, 'Internet'],
+    [/^(mobile_phone|telecommunication)$/, 'Internet'], [/^(laundry|dry_cleaning)$/, 'Laundry'],
     [/^(mall|department_store|clothes|shoes|electronics|jewelry|furniture|gift|toys|books|bag|boutique|houseware|doityourself|hardware|variety_store|sports_goods)$/, 'Shopping']
   ];
   function kindHint(j) {
